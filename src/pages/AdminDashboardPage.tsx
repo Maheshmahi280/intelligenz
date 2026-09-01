@@ -1,0 +1,828 @@
+import React, { useState, useEffect } from 'react';
+import { IntelligenzLogo } from '../components/IntelligenzLogo';
+import { api } from '../lib/api';
+import {
+  Event,
+  Announcement,
+  JoinApplication,
+  EventRegistration,
+  ContactMessage,
+  Project,
+  TeamMember,
+  Achievement,
+  GalleryImage,
+  SiteStats,
+  SiteSettings,
+} from '../types';
+import {
+  LayoutDashboard,
+  Calendar,
+  Bell,
+  Users,
+  Code2,
+  Trophy,
+  Image as ImageIcon,
+  FileText,
+  Mail,
+  BarChart3,
+  Settings,
+  ShieldCheck,
+  Database,
+  LogOut,
+  Sparkles,
+  ExternalLink,
+  Loader2,
+  Menu,
+  X,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  Award,
+  QrCode,
+  BookOpen,
+} from 'lucide-react';
+
+// Subcomponents
+import { AdminOverviewTab } from '../components/admin/AdminOverviewTab';
+import { AdminEventsTab } from '../components/admin/AdminEventsTab';
+import { AdminAnnouncementsTab } from '../components/admin/AdminAnnouncementsTab';
+import { AdminProjectsTab } from '../components/admin/AdminProjectsTab';
+import { AdminTeamTab } from '../components/admin/AdminTeamTab';
+import { AdminAchievementsTab } from '../components/admin/AdminAchievementsTab';
+import { AdminGalleryTab } from '../components/admin/AdminGalleryTab';
+import { AdminApplicationsTab } from '../components/admin/AdminApplicationsTab';
+import { AdminRegistrationsTab } from '../components/admin/AdminRegistrationsTab';
+import { AdminMessagesTab } from '../components/admin/AdminMessagesTab';
+import { AdminStatsTab } from '../components/admin/AdminStatsTab';
+import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
+import { AdminProfileTab } from '../components/admin/AdminProfileTab';
+import { AdminSqlTab } from '../components/admin/AdminSqlTab';
+import { AdminCertificatesTab } from '../components/admin/AdminCertificatesTab';
+import { AdminAttendanceTab } from '../components/admin/AdminAttendanceTab';
+import { AdminNewsletterTab } from '../components/admin/AdminNewsletterTab';
+import { AdminResourcesTab } from '../components/admin/AdminResourcesTab';
+
+interface AdminDashboardPageProps {
+  onLogout: () => void;
+  onNavigate: (path: string) => void;
+  onRefreshData?: () => void;
+}
+
+export type AdminTab =
+  | 'overview'
+  | 'events'
+  | 'announcements'
+  | 'certificates'
+  | 'attendance'
+  | 'newsletter'
+  | 'resources'
+  | 'projects'
+  | 'team'
+  | 'achievements'
+  | 'gallery'
+  | 'applications'
+  | 'registrations'
+  | 'messages'
+  | 'stats'
+  | 'settings'
+  | 'profile'
+  | 'sql';
+
+export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
+  onLogout,
+  onNavigate,
+  onRefreshData,
+}) => {
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Data States
+  const [events, setEvents] = useState<Event[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [gallery, setGallery] = useState<GalleryImage[]>([]);
+  const [applications, setApplications] = useState<JoinApplication[]>([]);
+  const [registrations, setRegistrations] = useState<EventRegistration[]>([]);
+  const [messages, setMessages] = useState<ContactMessage[]>([]);
+  const [stats, setStats] = useState<SiteStats | null>(null);
+  const [settings, setSettings] = useState<SiteSettings | null>(null);
+  const [overviewData, setOverviewData] = useState<any>(null);
+  const [sqlSchema, setSqlSchema] = useState<string>('');
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [feedback, setFeedback] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
+    setFeedback({ text, type });
+    setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const loadAllData = async () => {
+    try {
+      const [
+        evRes,
+        annRes,
+        projRes,
+        teamRes,
+        achRes,
+        galRes,
+        appRes,
+        regRes,
+        msgRes,
+        statsRes,
+        settRes,
+        overRes,
+        sqlRes,
+      ] = await Promise.all([
+        api.getEvents(),
+        api.getAnnouncements(),
+        api.getProjects(),
+        api.getTeam(),
+        api.getAchievements(),
+        api.getGallery(),
+        api.getApplications(),
+        api.getRegistrations(),
+        api.getMessages(),
+        api.getStats(),
+        api.getSettings(),
+        api.getOverviewStats().catch(() => null),
+        api.getSupabaseSchema().catch(() => ({ schema: '' })),
+      ]);
+
+      setEvents(evRes || []);
+      setAnnouncements(annRes || []);
+      setProjects(projRes || []);
+      setTeam(teamRes || []);
+      setAchievements(achRes || []);
+      setGallery(galRes || []);
+      setApplications(appRes || []);
+      setRegistrations(regRes || []);
+      setMessages(msgRes || []);
+      setStats(statsRes || null);
+      setSettings(settRes || null);
+      setOverviewData(overRes);
+      setSqlSchema(sqlRes?.schema || '');
+    } catch (err: any) {
+      console.error('Error fetching admin data:', err);
+      showFeedback(err.message || 'Failed to fetch admin data', 'error');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAllData();
+  }, []);
+
+  const handleManualRefresh = async () => {
+    setRefreshing(true);
+    await loadAllData();
+    if (onRefreshData) onRefreshData();
+    showFeedback('Data synchronized with database');
+  };
+
+  // Event Handlers
+  const handleSaveEvent = async (eventData: Partial<Event>) => {
+    try {
+      if (eventData.id) {
+        await api.updateEvent(eventData.id, eventData);
+        showFeedback('Event updated successfully');
+      } else {
+        await api.createEvent(eventData);
+        showFeedback('Event created and published');
+      }
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save event', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    try {
+      await api.deleteEvent(id);
+      showFeedback('Event removed from database');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete event', 'error');
+      throw err;
+    }
+  };
+
+  const handleDuplicateEvent = async (id: string) => {
+    try {
+      await api.duplicateEvent(id);
+      showFeedback('Event duplicated as draft/upcoming');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to duplicate event', 'error');
+      throw err;
+    }
+  };
+
+  // Announcement Handlers
+  const handleSaveAnnouncement = async (annData: Partial<Announcement>) => {
+    try {
+      if (annData.id) {
+        await api.updateAnnouncement(annData.id, annData);
+        showFeedback('Announcement updated successfully');
+      } else {
+        await api.createAnnouncement(annData);
+        showFeedback('Announcement published');
+      }
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save announcement', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteAnnouncement = async (id: string) => {
+    try {
+      await api.deleteAnnouncement(id);
+      showFeedback('Announcement deleted');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete announcement', 'error');
+      throw err;
+    }
+  };
+
+  // Project Handlers
+  const handleSaveProject = async (projData: Partial<Project>) => {
+    try {
+      if (projData.id) {
+        await api.updateProject(projData.id, projData);
+        showFeedback('Project updated');
+      } else {
+        await api.createProject(projData);
+        showFeedback('Project added');
+      }
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save project', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    try {
+      await api.deleteProject(id);
+      showFeedback('Project deleted');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete project', 'error');
+      throw err;
+    }
+  };
+
+  // Team Handlers
+  const handleSaveMember = async (memberData: Partial<TeamMember>) => {
+    try {
+      if (memberData.id) {
+        await api.updateTeamMember(memberData.id, memberData);
+        showFeedback('Team member profile updated');
+      } else {
+        await api.createTeamMember(memberData);
+        showFeedback('Team member added to roster');
+      }
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save team member', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteMember = async (id: string) => {
+    try {
+      await api.deleteTeamMember(id);
+      showFeedback('Team member removed from roster');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete member', 'error');
+      throw err;
+    }
+  };
+
+  // Achievement Handlers
+  const handleSaveAchievement = async (achData: Partial<Achievement>) => {
+    try {
+      if (achData.id) {
+        await api.updateAchievement(achData.id, achData);
+        showFeedback('Achievement updated');
+      } else {
+        await api.createAchievement(achData);
+        showFeedback('Achievement recorded');
+      }
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save achievement', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteAchievement = async (id: string) => {
+    try {
+      await api.deleteAchievement(id);
+      showFeedback('Achievement deleted');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete achievement', 'error');
+      throw err;
+    }
+  };
+
+  // Gallery Handlers
+  const handleSaveGalleryItem = async (data: Partial<GalleryImage>) => {
+    try {
+      if (data.id) {
+        await api.updateGalleryItem(data.id, data);
+        showFeedback('Gallery photo details updated');
+      } else {
+        await api.createGalleryItem(data);
+        showFeedback('Gallery photo published');
+      }
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save photo', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteGalleryItem = async (id: string) => {
+    try {
+      await api.deleteGalleryItem(id);
+      showFeedback('Gallery photo removed');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete photo', 'error');
+      throw err;
+    }
+  };
+
+  // Application Handlers
+  const handleUpdateApplicationStatus = async (id: string, status: string, notes?: string) => {
+    try {
+      await api.updateApplicationStatus(id, status, notes);
+      showFeedback(`Application status updated to ${status}`);
+      await loadAllData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to update application', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteApplication = async (id: string) => {
+    try {
+      await api.deleteApplication(id);
+      showFeedback('Application deleted');
+      await loadAllData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete application', 'error');
+      throw err;
+    }
+  };
+
+  // Registration Handlers
+  const handleUpdateRegistrationStatus = async (id: string, status: string) => {
+    try {
+      await api.updateRegistrationStatus(id, status);
+      showFeedback(`Registration updated to ${status}`);
+      await loadAllData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to update registration', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteRegistration = async (id: string) => {
+    try {
+      await api.deleteRegistration(id);
+      showFeedback('Registration record deleted');
+      await loadAllData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete registration', 'error');
+      throw err;
+    }
+  };
+
+  // Message Handlers
+  const handleUpdateMessageStatus = async (id: string, is_read: boolean, is_responded?: boolean) => {
+    try {
+      await api.updateMessageStatus(id, is_read, is_responded);
+      await loadAllData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to update message', 'error');
+      throw err;
+    }
+  };
+
+  const handleDeleteMessage = async (id: string) => {
+    try {
+      await api.deleteMessage(id);
+      showFeedback('Message deleted');
+      await loadAllData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to delete message', 'error');
+      throw err;
+    }
+  };
+
+  // Stats & Settings
+  const handleSaveStats = async (newStats: SiteStats) => {
+    try {
+      await api.updateStats(newStats);
+      showFeedback('Statistics saved');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save stats', 'error');
+      throw err;
+    }
+  };
+
+  const handleSaveSettings = async (newSettings: SiteSettings) => {
+    try {
+      await api.updateSettings(newSettings);
+      showFeedback('Settings saved');
+      await loadAllData();
+      if (onRefreshData) onRefreshData();
+    } catch (err: any) {
+      showFeedback(err.message || 'Failed to save settings', 'error');
+      throw err;
+    }
+  };
+
+  const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'events', label: 'Events & Workshops', icon: Calendar, count: events.length },
+    { id: 'announcements', label: 'Announcements', icon: Bell, count: announcements.length },
+    { id: 'certificates', label: 'Certificates & Credentials', icon: Award },
+    { id: 'attendance', label: 'QR Attendance & Check-In', icon: QrCode },
+    { id: 'newsletter', label: 'Newsletter & Broadcasts', icon: Mail },
+    { id: 'resources', label: 'Learning Resources', icon: BookOpen },
+    { id: 'projects', label: 'AI Projects', icon: Code2, count: projects.length },
+    { id: 'team', label: 'Core Team & Faculty', icon: Users, count: team.length },
+    { id: 'achievements', label: 'Achievements', icon: Trophy, count: achievements.length },
+    { id: 'gallery', label: 'Photo Gallery', icon: ImageIcon, count: gallery.length },
+    {
+      id: 'applications',
+      label: 'Recruitment Apps',
+      icon: FileText,
+      count: applications.filter((a) => a.status === 'Pending').length || undefined,
+      badgeColor: 'bg-emerald-500/20 text-emerald-400',
+    },
+    { id: 'registrations', label: 'Event Registrations', icon: Users, count: registrations.length },
+    {
+      id: 'messages',
+      label: 'Contact Messages',
+      icon: Mail,
+      count: messages.filter((m) => !m.is_read).length || undefined,
+      badgeColor: 'bg-rose-500/20 text-rose-400',
+    },
+    { id: 'stats', label: 'Club Statistics', icon: BarChart3 },
+    { id: 'settings', label: 'Site Settings', icon: Settings },
+    { id: 'profile', label: 'Admin Security', icon: ShieldCheck },
+    { id: 'sql', label: 'Supabase SQL Export', icon: Database },
+  ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0B0E] flex flex-col items-center justify-center gap-3 text-white">
+        <Loader2 className="w-8 h-8 animate-spin text-[#00E5FF]" />
+        <p className="text-xs font-mono text-[#9CA3AF]">Accessing INTELLIGENZ Administration Suite...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0A0B0E] text-[#D1D5DB] flex flex-col lg:flex-row">
+      {/* Sidebar (Desktop) */}
+      <aside className="hidden lg:flex lg:flex-col w-64 bg-[#0D1017] border-r border-[#1A1C23] shrink-0 sticky top-0 h-screen overflow-y-auto">
+        {/* Brand */}
+        <div className="p-5 border-b border-[#1A1C23]">
+          <div className="flex items-center gap-2.5">
+            <IntelligenzLogo size="sm" />
+            <div>
+              <div className="font-black text-white text-sm font-['Outfit'] tracking-wider">
+                INTELLIGENZ
+              </div>
+              <div className="text-[10px] text-[#6B7280] uppercase tracking-widest font-mono">
+                Admin Control Room
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation links */}
+        <div className="p-3 space-y-1 flex-1 overflow-y-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                id={`admin-nav-${item.id}`}
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all ${
+                  isActive
+                    ? 'bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20'
+                    : 'text-[#9CA3AF] hover:text-white hover:bg-[#121622]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#00E5FF]' : 'text-[#6B7280]'}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      item.badgeColor || 'bg-[#1A1C23] text-[#9CA3AF]'
+                    }`}
+                  >
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-3 border-t border-[#1A1C23] space-y-1.5">
+          <button
+            onClick={() => onNavigate('/')}
+            className="w-full px-3 py-2 rounded-xl text-xs text-[#9CA3AF] hover:text-white hover:bg-[#121622] flex items-center justify-between transition-all"
+          >
+            <span className="flex items-center gap-2">
+              <ExternalLink className="w-4 h-4 text-[#6B7280]" />
+              View Public Website
+            </span>
+          </button>
+          <button
+            onClick={onLogout}
+            className="w-full px-3 py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-2 transition-all font-semibold"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile Header */}
+      <div className="lg:hidden p-4 bg-[#0D1017] border-b border-[#1A1C23] flex items-center justify-between sticky top-0 z-40">
+        <div className="flex items-center gap-2">
+          <IntelligenzLogo size="xs" />
+          <span className="text-sm font-black text-white font-['Outfit']">Admin Portal</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleManualRefresh}
+            className="p-2 rounded-lg text-[#9CA3AF] hover:text-white hover:bg-[#1A1C23]"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-[#00E5FF]' : ''}`} />
+          </button>
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 rounded-lg text-[#9CA3AF] hover:text-white hover:bg-[#1A1C23]"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile Menu Drawer */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden p-4 bg-[#0D1017] border-b border-[#1A1C23] space-y-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between ${
+                  isActive
+                    ? 'bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20'
+                    : 'text-[#9CA3AF] hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Icon className="w-4 h-4" />
+                  <span>{item.label}</span>
+                </div>
+                {item.count !== undefined && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#1A1C23] text-[#9CA3AF]">
+                    {item.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          <div className="pt-3 border-t border-[#1A1C23] flex gap-2">
+            <button
+              onClick={() => onNavigate('/')}
+              className="flex-1 py-2 rounded-lg bg-[#1A1C23] text-xs text-white"
+            >
+              Public Site
+            </button>
+            <button
+              onClick={onLogout}
+              className="flex-1 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area */}
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+        {/* Top bar with quick sync */}
+        <div className="hidden lg:flex items-center justify-between pb-6 mb-6 border-b border-[#1A1C23]">
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-[#6B7280]">
+              Logged in as <span className="text-white font-semibold">Administrator</span>
+            </div>
+            <span className="text-[#374151]">•</span>
+            <div className="text-xs text-[#6B7280]">
+              DR. K. V. SUBBA REDDY INSTITUTE OF TECHNOLOGY
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              id="admin-sync-btn"
+              onClick={handleManualRefresh}
+              disabled={refreshing}
+              className="px-3.5 py-1.5 rounded-lg bg-[#121622] hover:bg-[#1A1C23] text-xs text-[#9CA3AF] hover:text-white border border-[#1A1C23] flex items-center gap-1.5 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#00E5FF]' : ''}`} />
+              <span>{refreshing ? 'Syncing...' : 'Sync Database'}</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('/')}
+              className="px-3.5 py-1.5 rounded-lg bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] text-xs font-semibold border border-[#00E5FF]/20 flex items-center gap-1.5 transition-all"
+            >
+              <span>Public Website</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Global Feedback notification */}
+        {feedback && (
+          <div
+            className={`p-4 rounded-xl text-xs font-semibold flex items-center gap-2.5 mb-6 animate-in slide-in-from-top duration-200 ${
+              feedback.type === 'success'
+                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+            }`}
+          >
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+            )}
+            <span>{feedback.text}</span>
+          </div>
+        )}
+
+        {/* Active Tab View */}
+        {activeTab === 'overview' && (
+          <AdminOverviewTab
+            overviewData={overviewData}
+            onNavigateTab={(tab) => setActiveTab(tab as AdminTab)}
+            onOpenCreateEvent={() => setActiveTab('events')}
+            onOpenCreateAnnouncement={() => setActiveTab('announcements')}
+          />
+        )}
+
+        {activeTab === 'events' && (
+          <AdminEventsTab
+            events={events}
+            onSaveEvent={handleSaveEvent}
+            onDeleteEvent={handleDeleteEvent}
+            onDuplicateEvent={handleDuplicateEvent}
+          />
+        )}
+
+        {activeTab === 'announcements' && (
+          <AdminAnnouncementsTab
+            announcements={announcements}
+            onSaveAnnouncement={handleSaveAnnouncement}
+            onDeleteAnnouncement={handleDeleteAnnouncement}
+          />
+        )}
+
+        {activeTab === 'certificates' && (
+          <AdminCertificatesTab onRefreshData={handleManualRefresh} />
+        )}
+
+        {activeTab === 'attendance' && (
+          <AdminAttendanceTab onRefreshData={handleManualRefresh} />
+        )}
+
+        {activeTab === 'newsletter' && (
+          <AdminNewsletterTab onRefreshData={handleManualRefresh} />
+        )}
+
+        {activeTab === 'resources' && (
+          <AdminResourcesTab onRefreshData={handleManualRefresh} />
+        )}
+
+        {activeTab === 'projects' && (
+          <AdminProjectsTab
+            projects={projects}
+            onSaveProject={handleSaveProject}
+            onDeleteProject={handleDeleteProject}
+          />
+        )}
+
+        {activeTab === 'team' && (
+          <AdminTeamTab
+            team={team}
+            onSaveMember={handleSaveMember}
+            onDeleteMember={handleDeleteMember}
+          />
+        )}
+
+        {activeTab === 'achievements' && (
+          <AdminAchievementsTab
+            achievements={achievements}
+            onSaveAchievement={handleSaveAchievement}
+            onDeleteAchievement={handleDeleteAchievement}
+          />
+        )}
+
+        {activeTab === 'gallery' && (
+          <AdminGalleryTab
+            gallery={gallery}
+            onSaveItem={handleSaveGalleryItem}
+            onDeleteItem={handleDeleteGalleryItem}
+          />
+        )}
+
+        {activeTab === 'applications' && (
+          <AdminApplicationsTab
+            applications={applications}
+            onUpdateStatus={handleUpdateApplicationStatus}
+            onDeleteApplication={handleDeleteApplication}
+          />
+        )}
+
+        {activeTab === 'registrations' && (
+          <AdminRegistrationsTab
+            registrations={registrations}
+            events={events}
+            onUpdateStatus={handleUpdateRegistrationStatus}
+            onDeleteRegistration={handleDeleteRegistration}
+          />
+        )}
+
+        {activeTab === 'messages' && (
+          <AdminMessagesTab
+            messages={messages}
+            onUpdateStatus={handleUpdateMessageStatus}
+            onDeleteMessage={handleDeleteMessage}
+          />
+        )}
+
+        {activeTab === 'stats' && (
+          <AdminStatsTab stats={stats} onSaveStats={handleSaveStats} />
+        )}
+
+        {activeTab === 'settings' && (
+          <AdminSettingsTab settings={settings} onSaveSettings={handleSaveSettings} />
+        )}
+
+        {activeTab === 'profile' && <AdminProfileTab />}
+
+        {activeTab === 'sql' && <AdminSqlTab sqlSchema={sqlSchema} />}
+      </main>
+    </div>
+  );
+};
