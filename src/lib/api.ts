@@ -174,24 +174,142 @@ export const api = {
   },
 
   // Auth
-  login: async (credentials: { username?: string; email?: string; password: string }) => {
+  login: async (credentials: { identifier?: string; username?: string; email?: string; password: string }) => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Login failed');
+    if (!res.ok) throw new Error(data.error || 'Invalid administrator credentials.');
     authStorage.setToken(data.token);
     authStorage.setUser(data.user);
     return data;
   },
 
+  logout: async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch {
+      // Ignore network errors on signout
+    }
+    authStorage.clearToken();
+  },
+
   verifyAuth: async () => {
-    const res = await fetch('/api/auth/verify', {
+    try {
+      const res = await fetch('/api/auth/verify', {
+        headers: authHeaders(),
+      });
+      if (!res.ok) {
+        authStorage.clearToken();
+        return false;
+      }
+      const data = await res.json();
+      if (data.valid && data.user) {
+        authStorage.setUser(data.user);
+        return true;
+      }
+      authStorage.clearToken();
+      return false;
+    } catch {
+      return false;
+    }
+  },
+
+  // Admin Whitelist & Access Control Management (Super Admin)
+  adminGetAdmins: async () => {
+    const res = await fetch('/api/admin/admins', { headers: authHeaders() });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Failed to fetch administrators list' }));
+      throw new Error(err.error || 'Failed to fetch administrators list');
+    }
+    return res.json();
+  },
+
+  adminCreateAdmin: async (data: {
+    name: string;
+    username: string;
+    email: string;
+    role: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR';
+    password?: string;
+    temporaryPassword?: string;
+    status?: 'ACTIVE' | 'INACTIVE' | 'REVOKED';
+  }) => {
+    const res = await fetch('/api/admin/admins', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to create administrator');
+    return result;
+  },
+
+  adminUpdateAdmin: async (
+    id: string,
+    data: {
+      name?: string;
+      username?: string;
+      email?: string;
+      role?: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR';
+      status?: 'ACTIVE' | 'INACTIVE' | 'REVOKED';
+    }
+  ) => {
+    const res = await fetch(`/api/admin/admins/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to update administrator');
+    return result;
+  },
+
+  adminSetAdminPassword: async (id: string, password: string) => {
+    const res = await fetch(`/api/admin/admins/${encodeURIComponent(id)}/password`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ password, newPassword: password }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to set administrator password');
+    return result;
+  },
+
+  adminResetAdminPassword: async (id: string, password?: string) => {
+    const res = await fetch(`/api/admin/admins/${encodeURIComponent(id)}/password`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ password, newPassword: password }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to reset administrator password');
+    return result;
+  },
+
+  adminUpdateAdminStatus: async (id: string, status: 'ACTIVE' | 'INACTIVE' | 'REVOKED') => {
+    const res = await fetch(`/api/admin/admins/${encodeURIComponent(id)}/status`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to update administrator status');
+    return result;
+  },
+
+  adminDeleteAdmin: async (id: string) => {
+    const res = await fetch(`/api/admin/admins/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
       headers: authHeaders(),
     });
-    return res.ok;
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to delete administrator');
+    return result;
   },
 
   // Admin Profile & Security
@@ -215,7 +333,7 @@ export const api = {
     return result;
   },
 
-  adminChangePassword: async (data: { currentPassword: string; newPassword: string }) => {
+  adminChangePassword: async (data: { currentPassword?: string; newPassword: string }) => {
     const res = await fetch('/api/admin/change-password', {
       method: 'POST',
       headers: authHeaders(),
@@ -526,9 +644,9 @@ export const api = {
   },
 
   // Aliases for admin actions
-  adminLogin: async (credentials: { username?: string; email?: string; password: string } | string, maybePassword?: string) => {
+  adminLogin: async (credentials: { identifier?: string; username?: string; email?: string; password: string } | string, maybePassword?: string) => {
     if (typeof credentials === 'string') {
-      return api.login({ username: credentials, password: maybePassword || '' });
+      return api.login({ identifier: credentials, username: credentials, password: maybePassword || '' });
     }
     return api.login(credentials);
   },

@@ -389,3 +389,21 @@ export interface AuditLog {
   ip_address?: string;
 }
 
+export type AdminRole = 'SUPER_ADMIN' | 'ADMIN';
+export type AdminStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface AdminAccount {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  role: AdminRole;
+  status: AdminStatus;
+  must_change_password?: boolean;
+  last_login?: string;
+  last_login_at?: string;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+

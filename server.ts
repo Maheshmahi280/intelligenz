@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -39,13 +42,30 @@ import {
 
 export interface AdminUserRecord {
   id: string;
+  name: string;
   username: string;
   email: string;
   password_hash: string;
   salt: string;
-  role: 'admin';
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR';
+  status: 'ACTIVE' | 'INACTIVE' | 'REVOKED';
+  must_change_password?: boolean;
   created_at: string;
   updated_at: string;
+  last_login_at?: string;
+  created_by?: string;
+}
+
+export interface AuthenticatedRequest extends Request {
+  adminUser?: {
+    id: string;
+    name: string;
+    username: string;
+    email: string;
+    role: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR';
+    status: 'ACTIVE' | 'INACTIVE' | 'REVOKED';
+    mustChangePassword?: boolean;
+  };
 }
 
 interface DatabaseSchema {
@@ -85,31 +105,120 @@ function hashPassword(password: string, salt: string): string {
   return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
 }
 
-function createDefaultAdmin(): AdminUserRecord {
+function createBootstrapSuperAdmin(): AdminUserRecord {
   const salt = crypto.randomBytes(16).toString('hex');
-  const defaultEmail = process.env.ADMIN_EMAIL || 'mahigamingzone2@gmail.com';
-  const defaultPass = process.env.ADMIN_PASSWORD || 'intelligenz2026';
+  const defaultUsername = (process.env.ADMIN_BOOTSTRAP_USERNAME || 'superadmin').trim().toLowerCase().replace(/^["']|["']$/g, '');
+  const defaultEmail = (process.env.ADMIN_BOOTSTRAP_EMAIL || 'mahibittu2006@gmail.com').trim().toLowerCase().replace(/^["']|["']$/g, '');
+  const defaultPass = (process.env.ADMIN_BOOTSTRAP_PASSWORD || 'admin1@10043').trim().replace(/^["']|["']$/g, '');
   return {
-    id: 'usr-admin-master',
-    username: 'admin',
+    id: 'usr-admin-primary',
+    name: 'Primary Super Administrator',
+    username: defaultUsername,
     email: defaultEmail,
     password_hash: hashPassword(defaultPass, salt),
     salt,
-    role: 'admin',
+    role: 'SUPER_ADMIN',
+    status: 'ACTIVE',
+    must_change_password: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    created_by: 'System Bootstrap',
   };
 }
 
 function loadDatabase(): DatabaseSchema {
   try {
+    const targetEmail = (process.env.ADMIN_BOOTSTRAP_EMAIL || 'mahibittu2006@gmail.com').trim().toLowerCase().replace(/^["']|["']$/g, '');
+    const targetUsername = (process.env.ADMIN_BOOTSTRAP_USERNAME || 'superadmin').trim().toLowerCase().replace(/^["']|["']$/g, '');
+    const targetPassword = (process.env.ADMIN_BOOTSTRAP_PASSWORD || 'admin1@10043').trim().replace(/^["']|["']$/g, '');
+
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, 'utf-8');
       const parsed = JSON.parse(data);
-      const adminUsers: AdminUserRecord[] =
-        Array.isArray(parsed.admin_users) && parsed.admin_users.length > 0
-          ? parsed.admin_users
-          : [createDefaultAdmin()];
+      let adminUsers: AdminUserRecord[] = [];
+      let needsSave = false;
+
+      if (Array.isArray(parsed.admin_users) && parsed.admin_users.length > 0) {
+        adminUsers = parsed.admin_users.map((u: any, idx: number) => ({
+          id: u.id || `usr-admin-${idx + 1}`,
+          name: u.name || (u.role === 'SUPER_ADMIN' || u.role === 'admin' ? 'Primary Super Administrator' : (u.username || 'Admin User')),
+          username: (u.username || '').toLowerCase().trim(),
+          email: (u.email || '').toLowerCase().trim(),
+          password_hash: u.password_hash || '',
+          salt: u.salt || crypto.randomBytes(16).toString('hex'),
+          role: (u.role === 'SUPER_ADMIN' || u.role === 'admin') ? 'SUPER_ADMIN' : (u.role === 'EDITOR' ? 'EDITOR' : 'ADMIN'),
+          status: (u.status === 'INACTIVE' || u.status === 'REVOKED') ? u.status : 'ACTIVE',
+          must_change_password: typeof u.must_change_password === 'boolean' ? u.must_change_password : false,
+          created_at: u.created_at || new Date().toISOString(),
+          updated_at: u.updated_at || new Date().toISOString(),
+          last_login_at: u.last_login_at || undefined,
+          created_by: u.created_by || 'System Bootstrap',
+        }));
+      }
+
+      // Check if configured SUPER_ADMIN already exists in database
+      const existingSuperAdmin = adminUsers.find(
+        (u) => u.username === targetUsername || u.email === targetEmail
+      );
+
+      if (existingSuperAdmin) {
+        if (existingSuperAdmin.role !== 'SUPER_ADMIN') {
+          existingSuperAdmin.role = 'SUPER_ADMIN';
+          needsSave = true;
+        }
+        if (existingSuperAdmin.status !== 'ACTIVE') {
+          existingSuperAdmin.status = 'ACTIVE';
+          needsSave = true;
+        }
+        if (!existingSuperAdmin.password_hash || !existingSuperAdmin.salt) {
+          existingSuperAdmin.salt = crypto.randomBytes(16).toString('hex');
+          existingSuperAdmin.password_hash = hashPassword(targetPassword, existingSuperAdmin.salt);
+          needsSave = true;
+        }
+      } else {
+        // Look for initial default admin placeholder (e.g. usr-admin-primary or admin/admin@drkvsrit.ac.in) to migrate
+        const placeholderIdx = adminUsers.findIndex(
+          (u) =>
+            u.id === 'usr-admin-primary' ||
+            u.username === 'admin' ||
+            u.email === 'admin@drkvsrit.ac.in'
+        );
+
+        if (placeholderIdx !== -1) {
+          const salt = crypto.randomBytes(16).toString('hex');
+          adminUsers[placeholderIdx] = {
+            ...adminUsers[placeholderIdx],
+            id: 'usr-admin-primary',
+            name: 'Primary Super Administrator',
+            username: targetUsername,
+            email: targetEmail,
+            password_hash: hashPassword(targetPassword, salt),
+            salt,
+            role: 'SUPER_ADMIN',
+            status: 'ACTIVE',
+            must_change_password: false,
+            updated_at: new Date().toISOString(),
+            created_by: 'System Bootstrap',
+          };
+          needsSave = true;
+        } else {
+          // Create new Super Admin record
+          const bootstrap = createBootstrapSuperAdmin();
+          adminUsers.unshift(bootstrap);
+          needsSave = true;
+        }
+      }
+
+      // Remove any leftover duplicate placeholder accounts that might conflict
+      adminUsers = adminUsers.filter(
+        (u, idx, arr) =>
+          arr.findIndex(
+            (other) =>
+              other.username === u.username ||
+              other.email === u.email ||
+              (other.id === u.id && u.id === 'usr-admin-primary')
+          ) === idx
+      );
 
       const loaded: DatabaseSchema = {
         settings: parsed.settings || INITIAL_SETTINGS,
@@ -131,6 +240,11 @@ function loadDatabase(): DatabaseSchema {
         checkins: parsed.checkins || [],
         audit_logs: Array.isArray(parsed.audit_logs) ? parsed.audit_logs : [],
       };
+
+      if (needsSave || !parsed.admin_users || parsed.admin_users.length === 0) {
+        saveDatabase(loaded);
+      }
+
       return loaded;
     }
   } catch (err) {
@@ -149,7 +263,7 @@ function loadDatabase(): DatabaseSchema {
     join_applications: [],
     registrations: [],
     messages: [],
-    admin_users: [createDefaultAdmin()],
+    admin_users: [createBootstrapSuperAdmin()],
     certificates: INITIAL_CERTIFICATES,
     newsletter_subscribers: INITIAL_SUBSCRIBERS,
     newsletter_broadcasts: [],
@@ -161,7 +275,7 @@ function loadDatabase(): DatabaseSchema {
         action: 'System Initialized',
         entity_type: 'System',
         admin_email: 'admin@drkvsrit.ac.in',
-        details: 'IntelliGenZ Platform and Database Initialized',
+        details: 'IntelliGenZ Platform and Database Initialized with Secure Whitelist Access Control',
         timestamp: new Date().toISOString(),
       },
     ],
@@ -228,7 +342,7 @@ function rateLimiter(limit: number, windowMs: number) {
     ipRateLimits.set(ip, clientData);
 
     if (clientData.count > limit) {
-      res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      res.status(429).json({ error: 'Too many requests. Please wait a moment and try again.' });
       return;
     }
     next();
@@ -236,30 +350,76 @@ function rateLimiter(limit: number, windowMs: number) {
 }
 
 // Active session storage
-const activeSessions = new Map<string, { userId: string; email: string; expiresAt: number }>();
-const ADMIN_SECRET = process.env.ADMIN_SECRET || 'intelligenz_admin_secret_token_2026';
+interface ActiveSession {
+  token: string;
+  userId: string;
+  username: string;
+  email: string;
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR';
+  expiresAt: number;
+  mustChangePassword?: boolean;
+}
 
-function adminAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
+const activeSessions = new Map<string, ActiveSession>();
+
+function invalidateUserSessions(userId: string) {
+  for (const [token, session] of activeSessions.entries()) {
+    if (session.userId === userId) {
+      activeSessions.delete(token);
+    }
+  }
+}
+
+function adminAuthMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Unauthorized: Admin authentication required' });
+    res.status(401).json({ error: 'Unauthorized: Admin authentication token required.' });
     return;
   }
   const token = authHeader.split(' ')[1];
 
-  // Check master secret or active valid session
-  if (token === ADMIN_SECRET) {
-    next();
-    return;
-  }
-
   const session = activeSessions.get(token);
-  if (session && session.expiresAt > Date.now()) {
-    next();
+  if (!session || session.expiresAt <= Date.now()) {
+    if (session) activeSessions.delete(token);
+    res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' });
     return;
   }
 
-  res.status(403).json({ error: 'Forbidden: Invalid or expired admin session' });
+  // Lookup user in current database to verify active status & current role
+  const dbUser = db.admin_users.find((u) => u.id === session.userId);
+  if (!dbUser || dbUser.status !== 'ACTIVE') {
+    activeSessions.delete(token);
+    res.status(403).json({ error: 'Access denied: Administrator account is not active or has been revoked.' });
+    return;
+  }
+
+  req.adminUser = {
+    id: dbUser.id,
+    name: dbUser.name,
+    username: dbUser.username,
+    email: dbUser.email,
+    role: dbUser.role,
+    status: dbUser.status,
+    mustChangePassword: !!dbUser.must_change_password,
+  };
+
+  next();
+}
+
+function requireRole(...allowedRoles: Array<'SUPER_ADMIN' | 'ADMIN' | 'EDITOR'>) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+    if (!req.adminUser) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    if (!allowedRoles.includes(req.adminUser.role)) {
+      res.status(403).json({
+        error: `Forbidden: Insufficient privileges. Required role: ${allowedRoles.join(' or ')}. Current role: ${req.adminUser.role}.`,
+      });
+      return;
+    }
+    next();
+  };
 }
 
 async function startServer() {
@@ -771,188 +931,594 @@ async function startServer() {
   });
 
   // ==========================================
-  // AUTHENTICATION
+  // AUTHENTICATION & ACCESS CONTROL
   // ==========================================
-  app.post('/api/auth/login', rateLimiter(10, 60000), (req, res) => {
-    const { username, email, password } = req.body;
-    const identifier = (username || email || '').trim().toLowerCase();
+  app.post('/api/auth/login', rateLimiter(60, 60000), (req, res) => {
+    const { username, email, identifier: rawIdentifier, password } = req.body;
+    const identifier = (rawIdentifier || username || email || '').trim().toLowerCase();
 
     if (!identifier || !password) {
-      res.status(400).json({ error: 'Please provide your email/username and password.' });
+      res.status(400).json({ error: 'Please provide your administrator email or username, and password.' });
       return;
     }
 
-    // Find admin user by username or email
+    // Find admin user in database by username or email
     const adminUser = db.admin_users.find(
       (u) =>
         u.username.toLowerCase() === identifier ||
         u.email.toLowerCase() === identifier
     );
 
-    let isAuthenticated = false;
-    let matchedUser: AdminUserRecord | null = null;
-
-    if (adminUser) {
-      const calculatedHash = hashPassword(password, adminUser.salt);
-      if (calculatedHash === adminUser.password_hash) {
-        isAuthenticated = true;
-        matchedUser = adminUser;
-      }
-    }
-
-    // Master fallback if matching ADMIN_SECRET / master pass in dev
-    const masterPass = process.env.ADMIN_PASSWORD || 'intelligenz2026';
-    if (!isAuthenticated && (identifier === 'admin' || identifier === (process.env.ADMIN_EMAIL || 'mahigamingzone2@gmail.com').toLowerCase()) && password === masterPass) {
-      isAuthenticated = true;
-      matchedUser = db.admin_users[0] || createDefaultAdmin();
-    }
-
-    if (isAuthenticated && matchedUser) {
-      const sessionToken = `session_${crypto.randomBytes(24).toString('hex')}`;
-      const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
-      activeSessions.set(sessionToken, {
-        userId: matchedUser.id,
-        email: matchedUser.email,
-        expiresAt,
-      });
-
-      res.json({
-        success: true,
-        token: sessionToken,
-        user: {
-          id: matchedUser.id,
-          username: matchedUser.username,
-          email: matchedUser.email,
-          role: matchedUser.role,
-        },
-      });
+    if (!adminUser) {
+      logAdminAction('Admin Login Failed', 'Auth', identifier, `Failed login attempt for unknown account '${identifier}'`, identifier, req);
+      res.status(401).json({ error: 'Invalid administrator credentials.' });
       return;
     }
 
-    res.status(401).json({ error: 'Invalid admin email, username, or password.' });
+    if (adminUser.status === 'INACTIVE') {
+      logAdminAction('Admin Login Blocked', 'Auth', adminUser.id, `Login blocked: Account '${adminUser.username}' is marked INACTIVE`, adminUser.email, req);
+      res.status(403).json({ error: 'Your administrator account is currently inactive. Please contact the Super Administrator.' });
+      return;
+    }
+
+    if (adminUser.status === 'REVOKED') {
+      logAdminAction('Admin Login Blocked', 'Auth', adminUser.id, `Login blocked: Account '${adminUser.username}' access is REVOKED`, adminUser.email, req);
+      res.status(403).json({ error: 'Your administrator access has been revoked. Contact the department administration.' });
+      return;
+    }
+
+    if (adminUser.status !== 'ACTIVE') {
+      res.status(403).json({ error: 'Invalid administrator credentials.' });
+      return;
+    }
+
+    // Verify PBKDF2 password hash
+    const calculatedHash = hashPassword(password, adminUser.salt);
+    if (calculatedHash !== adminUser.password_hash) {
+      logAdminAction('Admin Login Failed', 'Auth', adminUser.id, `Failed login attempt: Incorrect password for '${adminUser.username}'`, adminUser.email, req);
+      res.status(401).json({ error: 'Invalid administrator credentials.' });
+      return;
+    }
+
+    // Update login timestamp
+    adminUser.last_login_at = new Date().toISOString();
+    adminUser.updated_at = new Date().toISOString();
+    saveDatabase(db);
+
+    // Issue cryptographically secure session token (24 hours expiry)
+    const sessionToken = `session_${crypto.randomBytes(32).toString('hex')}`;
+    const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+    activeSessions.set(sessionToken, {
+      token: sessionToken,
+      userId: adminUser.id,
+      username: adminUser.username,
+      email: adminUser.email,
+      role: adminUser.role,
+      expiresAt,
+      mustChangePassword: !!adminUser.must_change_password,
+    });
+
+    logAdminAction(
+      'Admin Login Success',
+      'Auth',
+      adminUser.id,
+      `Administrator ${adminUser.name} (${adminUser.role}) signed in successfully`,
+      adminUser.email,
+      req
+    );
+
+    res.json({
+      success: true,
+      token: sessionToken,
+      mustChangePassword: !!adminUser.must_change_password,
+      user: {
+        id: adminUser.id,
+        name: adminUser.name,
+        username: adminUser.username,
+        email: adminUser.email,
+        role: adminUser.role,
+        status: adminUser.status,
+        mustChangePassword: !!adminUser.must_change_password,
+      },
+    });
   });
 
   app.get('/api/auth/verify', (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ valid: false, error: 'No authorization token provided' });
+      res.status(401).json({ valid: false, error: 'No authorization token provided.' });
       return;
     }
 
     const token = authHeader.split(' ')[1];
-    if (token === ADMIN_SECRET) {
-      const defaultAdmin = db.admin_users[0] || createDefaultAdmin();
-      res.json({
-        valid: true,
-        user: {
-          id: defaultAdmin.id,
-          username: defaultAdmin.username,
-          email: defaultAdmin.email,
-          role: defaultAdmin.role,
-        },
-      });
-      return;
-    }
-
     const session = activeSessions.get(token);
     if (session && session.expiresAt > Date.now()) {
-      const user = db.admin_users.find((u) => u.id === session.userId) || db.admin_users[0];
-      res.json({
-        valid: true,
-        user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-        },
-      });
-      return;
+      const user = db.admin_users.find((u) => u.id === session.userId);
+      if (user && user.status === 'ACTIVE') {
+        res.json({
+          valid: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            mustChangePassword: !!user.must_change_password,
+          },
+        });
+        return;
+      }
     }
 
-    res.status(401).json({ valid: false, error: 'Unauthorized or expired session' });
+    res.status(401).json({ valid: false, error: 'Unauthorized or expired session.' });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const session = activeSessions.get(token);
+      if (session) {
+        logAdminAction('Admin Logout', 'Auth', session.userId, `Administrator session signed out for ${session.email}`, session.email, req);
+        activeSessions.delete(token);
+      }
+    }
+    res.json({ success: true, message: 'Signed out successfully.' });
   });
 
   // ==========================================
-  // ADMIN PROTECTED ROUTES
+  // ADMIN PROTECTED ROUTES & RBAC
   // ==========================================
   const adminRouter = express.Router();
   adminRouter.use(adminAuthMiddleware);
 
-  // Admin Profile & Account Management
-  adminRouter.get('/profile', (req, res) => {
-    const user = db.admin_users[0] || createDefaultAdmin();
+  // Admin Profile & Account Self-Management
+  adminRouter.get('/profile', (req: AuthenticatedRequest, res) => {
+    const user = db.admin_users.find((u) => u.id === req.adminUser?.id) || db.admin_users[0];
     res.json({
       id: user.id,
+      name: user.name,
       username: user.username,
       email: user.email,
       role: user.role,
+      status: user.status,
+      mustChangePassword: !!user.must_change_password,
       created_at: user.created_at,
       updated_at: user.updated_at,
+      last_login_at: user.last_login_at,
+      created_by: user.created_by,
     });
   });
 
-  adminRouter.put('/profile', (req, res) => {
-    const { email, username } = req.body;
-    if (!db.admin_users[0]) {
-      db.admin_users.push(createDefaultAdmin());
+  adminRouter.put('/profile', (req: AuthenticatedRequest, res) => {
+    const { name, email, username } = req.body;
+    const user = db.admin_users.find((u) => u.id === req.adminUser?.id);
+    if (!user) {
+      res.status(404).json({ error: 'Administrator record not found.' });
+      return;
     }
-    const user = db.admin_users[0];
+
     if (email && email.includes('@')) {
+      const conflict = db.admin_users.find((u) => u.id !== user.id && u.email.toLowerCase() === email.trim().toLowerCase());
+      if (conflict) {
+        res.status(400).json({ error: `Email address '${email.trim()}' is already in use by another administrator.` });
+        return;
+      }
       user.email = email.trim().toLowerCase();
     }
+
     if (username && username.trim().length > 0) {
-      user.username = username.trim();
+      const conflict = db.admin_users.find((u) => u.id !== user.id && u.username.toLowerCase() === username.trim().toLowerCase());
+      if (conflict) {
+        res.status(400).json({ error: `Username '${username.trim()}' is already in use by another administrator.` });
+        return;
+      }
+      user.username = username.trim().toLowerCase();
     }
+
+    if (name && name.trim().length > 0) {
+      user.name = name.trim();
+    }
+
     user.updated_at = new Date().toISOString();
     saveDatabase(db);
+
+    logAdminAction('Profile Updated', 'AdminUser', user.id, `Profile details updated for ${user.username}`, user.email, req);
+
     res.json({
       success: true,
-      message: 'Admin profile updated successfully',
+      message: 'Admin profile updated successfully.',
       user: {
         id: user.id,
+        name: user.name,
         username: user.username,
         email: user.email,
         role: user.role,
+        status: user.status,
+        mustChangePassword: !!user.must_change_password,
       },
     });
   });
 
-  adminRouter.post('/change-password', (req, res) => {
+  adminRouter.post('/change-password', (req: AuthenticatedRequest, res) => {
     const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      res.status(400).json({ error: 'Both current password and new password are required.' });
-      return;
-    }
-
-    if (newPassword.length < 6) {
+    if (!newPassword || newPassword.length < 6) {
       res.status(400).json({ error: 'New password must be at least 6 characters long.' });
       return;
     }
 
-    const user = db.admin_users[0] || createDefaultAdmin();
-    const currentHash = hashPassword(currentPassword, user.salt);
-    const masterPass = process.env.ADMIN_PASSWORD || 'intelligenz2026';
-
-    if (currentHash !== user.password_hash && currentPassword !== masterPass) {
-      res.status(400).json({ error: 'Current password is incorrect.' });
+    const user = db.admin_users.find((u) => u.id === req.adminUser?.id);
+    if (!user) {
+      res.status(404).json({ error: 'Administrator record not found.' });
       return;
     }
 
-    // Update with new salt & hash
+    // Require current password if not a first-time forced password change
+    if (!user.must_change_password) {
+      if (!currentPassword) {
+        res.status(400).json({ error: 'Current password is required to set a new password.' });
+        return;
+      }
+      const currentHash = hashPassword(currentPassword, user.salt);
+      if (currentHash !== user.password_hash) {
+        res.status(400).json({ error: 'Current password is incorrect.' });
+        return;
+      }
+    }
+
     const newSalt = crypto.randomBytes(16).toString('hex');
     user.salt = newSalt;
     user.password_hash = hashPassword(newPassword, newSalt);
+    user.must_change_password = false;
     user.updated_at = new Date().toISOString();
     saveDatabase(db);
 
+    // Update active session flag
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const session = activeSessions.get(token);
+      if (session) {
+        session.mustChangePassword = false;
+      }
+    }
+
+    logAdminAction('Password Changed', 'AdminUser', user.id, `Password changed successfully for ${user.username}`, user.email, req);
+
     res.json({
       success: true,
-      message: 'Password changed successfully! You can now use your new password to sign in.',
+      message: 'Password changed successfully! You can now use your updated password.',
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        mustChangePassword: false,
+      },
     });
   });
 
-  // Admin Overview
-  adminRouter.get('/overview', (req, res) => {
+  // ==========================================
+  // SUPER ADMIN ONLY: ADMINISTRATOR WHITELIST CRUD
+  // ==========================================
+  adminRouter.get('/admins', requireRole('SUPER_ADMIN'), (req: AuthenticatedRequest, res) => {
+    const sanitized = db.admin_users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      username: u.username,
+      email: u.email,
+      role: u.role,
+      status: u.status,
+      mustChangePassword: !!u.must_change_password,
+      created_at: u.created_at,
+      updated_at: u.updated_at,
+      last_login_at: u.last_login_at,
+      created_by: u.created_by,
+    }));
+    res.json(sanitized);
+  });
+
+  adminRouter.post('/admins', requireRole('SUPER_ADMIN'), (req: AuthenticatedRequest, res) => {
+    const { name, username, email, role, password, temporaryPassword, status } = req.body;
+    const adminName = (name || '').trim();
+    const adminUsername = (username || '').trim().toLowerCase();
+    const adminEmail = (email || '').trim().toLowerCase();
+    const adminRole: 'SUPER_ADMIN' | 'ADMIN' | 'EDITOR' = ['SUPER_ADMIN', 'ADMIN', 'EDITOR'].includes(role) ? role : 'ADMIN';
+    const adminStatus: 'ACTIVE' | 'INACTIVE' | 'REVOKED' = ['ACTIVE', 'INACTIVE', 'REVOKED'].includes(status) ? status : 'ACTIVE';
+    const rawPassword = (password || temporaryPassword || '').trim();
+
+    if (!adminName || !adminUsername || !adminEmail) {
+      res.status(400).json({ error: 'Full name, username, and official email are required to create an administrator account.' });
+      return;
+    }
+
+    if (!adminEmail.includes('@')) {
+      res.status(400).json({ error: 'Please provide a valid institutional email address.' });
+      return;
+    }
+
+    if (!rawPassword || rawPassword.length < 6) {
+      res.status(400).json({ error: 'Password must be at least 6 characters in length.' });
+      return;
+    }
+
+    // Check duplicate username or email
+    const existing = db.admin_users.find(
+      (u) => u.username.toLowerCase() === adminUsername || u.email.toLowerCase() === adminEmail
+    );
+    if (existing) {
+      res.status(400).json({ error: `An administrator with username '${adminUsername}' or email '${adminEmail}' already exists in the system.` });
+      return;
+    }
+
+    const salt = crypto.randomBytes(16).toString('hex');
+    const newAdmin: AdminUserRecord = {
+      id: `usr-admin-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      name: adminName,
+      username: adminUsername,
+      email: adminEmail,
+      password_hash: hashPassword(rawPassword, salt),
+      salt,
+      role: adminRole,
+      status: adminStatus,
+      must_change_password: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      created_by: req.adminUser?.email || 'Super Administrator',
+    };
+
+    db.admin_users.push(newAdmin);
+    saveDatabase(db);
+
+    logAdminAction(
+      'Admin Created',
+      'AdminUser',
+      newAdmin.id,
+      `Super Admin created ${newAdmin.role} account for ${newAdmin.name} (${newAdmin.email})`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `Administrator '${newAdmin.name}' successfully created.`,
+      admin: {
+        id: newAdmin.id,
+        name: newAdmin.name,
+        username: newAdmin.username,
+        email: newAdmin.email,
+        role: newAdmin.role,
+        status: newAdmin.status,
+        mustChangePassword: false,
+        created_at: newAdmin.created_at,
+        updated_at: newAdmin.updated_at,
+        created_by: newAdmin.created_by,
+      },
+    });
+  });
+
+  adminRouter.put('/admins/:id', requireRole('SUPER_ADMIN'), (req: AuthenticatedRequest, res) => {
+    const targetId = req.params.id;
+    const userIndex = db.admin_users.findIndex((u) => u.id === targetId);
+    if (userIndex === -1) {
+      res.status(404).json({ error: 'Administrator not found.' });
+      return;
+    }
+
+    const existingUser = db.admin_users[userIndex];
+    const { name, username, email, role, status } = req.body;
+
+    // Protect last active Super Admin
+    if (existingUser.role === 'SUPER_ADMIN' && ((role && role !== 'SUPER_ADMIN') || (status && status !== 'ACTIVE'))) {
+      const otherSuperAdmins = db.admin_users.filter((u) => u.id !== targetId && u.role === 'SUPER_ADMIN' && u.status === 'ACTIVE');
+      if (otherSuperAdmins.length === 0) {
+        res.status(400).json({ error: 'Cannot deactivate, revoke, or demote the last remaining active Super Administrator.' });
+        return;
+      }
+    }
+
+    if (username && username.trim().toLowerCase() !== existingUser.username.toLowerCase()) {
+      const conflict = db.admin_users.find((u) => u.id !== targetId && u.username.toLowerCase() === username.trim().toLowerCase());
+      if (conflict) {
+        res.status(400).json({ error: `Username '${username.trim()}' is already taken.` });
+        return;
+      }
+      existingUser.username = username.trim().toLowerCase();
+    }
+
+    if (email && email.trim().toLowerCase() !== existingUser.email.toLowerCase()) {
+      const conflict = db.admin_users.find((u) => u.id !== targetId && u.email.toLowerCase() === email.trim().toLowerCase());
+      if (conflict) {
+        res.status(400).json({ error: `Email '${email.trim()}' is already taken.` });
+        return;
+      }
+      existingUser.email = email.trim().toLowerCase();
+    }
+
+    if (name && name.trim()) {
+      existingUser.name = name.trim();
+    }
+
+    if (role && ['SUPER_ADMIN', 'ADMIN', 'EDITOR'].includes(role)) {
+      existingUser.role = role;
+    }
+
+    if (status && ['ACTIVE', 'INACTIVE', 'REVOKED'].includes(status)) {
+      existingUser.status = status;
+      if (status !== 'ACTIVE') {
+        invalidateUserSessions(targetId);
+      }
+    }
+
+    existingUser.updated_at = new Date().toISOString();
+    saveDatabase(db);
+
+    logAdminAction(
+      'Admin Updated',
+      'AdminUser',
+      existingUser.id,
+      `Super Admin updated admin ${existingUser.name} (Role: ${existingUser.role}, Status: ${existingUser.status})`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({
+      success: true,
+      message: 'Administrator updated successfully.',
+      admin: {
+        id: existingUser.id,
+        name: existingUser.name,
+        username: existingUser.username,
+        email: existingUser.email,
+        role: existingUser.role,
+        status: existingUser.status,
+        mustChangePassword: false,
+        created_at: existingUser.created_at,
+        updated_at: existingUser.updated_at,
+        last_login_at: existingUser.last_login_at,
+        created_by: existingUser.created_by,
+      },
+    });
+  });
+
+  const handleAdminPasswordUpdate = (req: AuthenticatedRequest, res: any) => {
+    const targetId = req.params.id;
+    const user = db.admin_users.find((u) => u.id === targetId);
+    if (!user) {
+      res.status(404).json({ error: 'Administrator not found.' });
+      return;
+    }
+
+    const { password, newPassword, temporaryPassword } = req.body;
+    const chosenPass = (password || newPassword || temporaryPassword || '').trim();
+
+    if (!chosenPass || chosenPass.length < 6) {
+      res.status(400).json({ error: 'New password must be at least 6 characters in length.' });
+      return;
+    }
+
+    const salt = crypto.randomBytes(16).toString('hex');
+    user.salt = salt;
+    user.password_hash = hashPassword(chosenPass, salt);
+    user.must_change_password = false;
+    user.updated_at = new Date().toISOString();
+    saveDatabase(db);
+
+    // Invalidate any active session for this user so they must log in with new password
+    invalidateUserSessions(targetId);
+
+    logAdminAction(
+      'Admin Password Updated',
+      'AdminUser',
+      user.id,
+      `Super Admin set permanent password for ${user.username} (${user.email})`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({
+      success: true,
+      message: `Permanent password updated successfully for administrator '${user.name}'.`,
+    });
+  };
+
+  adminRouter.post('/admins/:id/password', requireRole('SUPER_ADMIN'), handleAdminPasswordUpdate);
+  adminRouter.post('/admins/:id/reset-password', requireRole('SUPER_ADMIN'), handleAdminPasswordUpdate);
+
+  adminRouter.post('/admins/:id/status', requireRole('SUPER_ADMIN'), (req: AuthenticatedRequest, res) => {
+    const targetId = req.params.id;
+    const user = db.admin_users.find((u) => u.id === targetId);
+    if (!user) {
+      res.status(404).json({ error: 'Administrator not found.' });
+      return;
+    }
+
+    const { status } = req.body;
+    if (!['ACTIVE', 'INACTIVE', 'REVOKED'].includes(status)) {
+      res.status(400).json({ error: 'Invalid status. Expected ACTIVE, INACTIVE, or REVOKED.' });
+      return;
+    }
+
+    if (user.role === 'SUPER_ADMIN' && status !== 'ACTIVE') {
+      const otherSuperAdmins = db.admin_users.filter((u) => u.id !== targetId && u.role === 'SUPER_ADMIN' && u.status === 'ACTIVE');
+      if (otherSuperAdmins.length === 0) {
+        res.status(400).json({ error: 'Cannot change status of the only active Super Administrator.' });
+        return;
+      }
+    }
+
+    user.status = status;
+    user.updated_at = new Date().toISOString();
+    if (status !== 'ACTIVE') {
+      invalidateUserSessions(targetId);
+    }
+    saveDatabase(db);
+
+    logAdminAction(
+      `Admin Status: ${status}`,
+      'AdminUser',
+      user.id,
+      `Super Admin changed ${user.username} status to ${status}`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({
+      success: true,
+      message: `Administrator status set to ${status}.`,
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  });
+
+  adminRouter.delete('/admins/:id', requireRole('SUPER_ADMIN'), (req: AuthenticatedRequest, res) => {
+    const targetId = req.params.id;
+    const user = db.admin_users.find((u) => u.id === targetId);
+    if (!user) {
+      res.status(404).json({ error: 'Administrator not found.' });
+      return;
+    }
+
+    if (req.adminUser?.id === targetId) {
+      res.status(400).json({ error: 'You cannot delete your own active administrator account.' });
+      return;
+    }
+
+    if (user.role === 'SUPER_ADMIN') {
+      const otherSuperAdmins = db.admin_users.filter((u) => u.id !== targetId && u.role === 'SUPER_ADMIN' && u.status === 'ACTIVE');
+      if (otherSuperAdmins.length === 0) {
+        res.status(400).json({ error: 'Cannot delete the only remaining active Super Administrator.' });
+        return;
+      }
+    }
+
+    db.admin_users = db.admin_users.filter((u) => u.id !== targetId);
+    invalidateUserSessions(targetId);
+    saveDatabase(db);
+
+    logAdminAction(
+      'Admin Deleted',
+      'AdminUser',
+      targetId,
+      `Super Admin deleted administrator account ${user.name} (${user.email})`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({ success: true, message: `Administrator ${user.name} removed from whitelist.` });
+  });
+
+  // Admin Overview (All authenticated roles)
+  adminRouter.get('/overview', (req: AuthenticatedRequest, res) => {
     const upcomingEvents = db.events.filter((e) => e.status === 'Upcoming' || e.status === 'Registration Open').length;
     const completedEvents = db.events.filter((e) => e.status === 'Completed').length;
     res.json({
@@ -967,6 +1533,7 @@ async function startServer() {
       total_team: db.team.length,
       total_achievements: db.achievements.length,
       total_gallery: db.gallery.length,
+      total_admins: db.admin_users.length,
       unread_messages: db.messages.filter((m) => !m.is_read).length,
       recent_applications: db.join_applications.slice(0, 5),
       recent_registrations: db.registrations.slice(0, 5),
@@ -974,8 +1541,8 @@ async function startServer() {
     });
   });
 
-  // Admin Events CRUD
-  adminRouter.post('/events', (req, res) => {
+  // Admin Events CRUD (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.post('/events', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const body = req.body;
     const slug = body.slug || body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const newEvent: Event = {
@@ -992,7 +1559,7 @@ async function startServer() {
     res.status(201).json(newEvent);
   });
 
-  adminRouter.put('/events/:id', (req, res) => {
+  adminRouter.put('/events/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.events.findIndex((e) => e.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Event not found' });
@@ -1007,13 +1574,13 @@ async function startServer() {
     res.json(db.events[index]);
   });
 
-  adminRouter.delete('/events/:id', (req, res) => {
+  adminRouter.delete('/events/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     db.events = db.events.filter((e) => e.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true, message: 'Event deleted' });
   });
 
-  adminRouter.post('/events/:id/duplicate', (req, res) => {
+  adminRouter.post('/events/:id/duplicate', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const original = db.events.find((e) => e.id === req.params.id);
     if (!original) {
       res.status(404).json({ error: 'Event to duplicate not found' });
@@ -1033,8 +1600,8 @@ async function startServer() {
     res.status(201).json(duplicated);
   });
 
-  // Admin Announcements CRUD
-  adminRouter.post('/announcements', (req, res) => {
+  // Admin Announcements CRUD (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.post('/announcements', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const body = req.body;
     const slug = body.slug || body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const newAnn: Announcement = {
@@ -1050,7 +1617,7 @@ async function startServer() {
     res.status(201).json(newAnn);
   });
 
-  adminRouter.put('/announcements/:id', (req, res) => {
+  adminRouter.put('/announcements/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.announcements.findIndex((a) => a.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Announcement not found' });
@@ -1065,18 +1632,18 @@ async function startServer() {
     res.json(db.announcements[index]);
   });
 
-  adminRouter.delete('/announcements/:id', (req, res) => {
+  adminRouter.delete('/announcements/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     db.announcements = db.announcements.filter((a) => a.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true, message: 'Announcement deleted' });
   });
 
-  // Admin Join Applications Management
-  adminRouter.get('/join-applications', (req, res) => {
+  // Admin Join Applications Management (SUPER_ADMIN, ADMIN)
+  adminRouter.get('/join-applications', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.join_applications);
   });
 
-  adminRouter.patch('/join-applications/:id', (req, res) => {
+  adminRouter.patch('/join-applications/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const app = db.join_applications.find((a) => a.id === req.params.id);
     if (!app) {
       res.status(404).json({ error: 'Application not found' });
@@ -1088,14 +1655,14 @@ async function startServer() {
     res.json(app);
   });
 
-  adminRouter.delete('/join-applications/:id', (req, res) => {
+  adminRouter.delete('/join-applications/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.join_applications = db.join_applications.filter((a) => a.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Registrations Management
-  adminRouter.get('/registrations', (req, res) => {
+  // Admin Registrations Management (SUPER_ADMIN, ADMIN)
+  adminRouter.get('/registrations', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const eventId = req.query.event_id as string;
     let list = db.registrations;
     if (eventId) {
@@ -1104,7 +1671,7 @@ async function startServer() {
     res.json(list);
   });
 
-  adminRouter.patch('/registrations/:id', (req, res) => {
+  adminRouter.patch('/registrations/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const reg = db.registrations.find((r) => r.id === req.params.id);
     if (!reg) {
       res.status(404).json({ error: 'Registration not found' });
@@ -1115,14 +1682,14 @@ async function startServer() {
     res.json(reg);
   });
 
-  adminRouter.delete('/registrations/:id', (req, res) => {
+  adminRouter.delete('/registrations/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.registrations = db.registrations.filter((r) => r.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Team Management
-  adminRouter.post('/team', (req, res) => {
+  // Admin Team Management (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.post('/team', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const newMember: TeamMember = {
       ...req.body,
       id: `tm-${Date.now()}`,
@@ -1133,7 +1700,7 @@ async function startServer() {
     res.status(201).json(newMember);
   });
 
-  adminRouter.put('/team/:id', (req, res) => {
+  adminRouter.put('/team/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.team.findIndex((t) => t.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Team member not found' });
@@ -1144,14 +1711,14 @@ async function startServer() {
     res.json(db.team[index]);
   });
 
-  adminRouter.delete('/team/:id', (req, res) => {
+  adminRouter.delete('/team/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     db.team = db.team.filter((t) => t.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Projects Management
-  adminRouter.post('/projects', (req, res) => {
+  // Admin Projects Management (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.post('/projects', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const slug = req.body.slug || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const newProj: Project = {
       ...req.body,
@@ -1164,7 +1731,7 @@ async function startServer() {
     res.status(201).json(newProj);
   });
 
-  adminRouter.put('/projects/:id', (req, res) => {
+  adminRouter.put('/projects/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.projects.findIndex((p) => p.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Project not found' });
@@ -1175,14 +1742,14 @@ async function startServer() {
     res.json(db.projects[index]);
   });
 
-  adminRouter.delete('/projects/:id', (req, res) => {
+  adminRouter.delete('/projects/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     db.projects = db.projects.filter((p) => p.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Achievements Management
-  adminRouter.post('/achievements', (req, res) => {
+  // Admin Achievements Management (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.post('/achievements', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const newAch: Achievement = {
       ...req.body,
       id: `ach-${Date.now()}`,
@@ -1192,7 +1759,7 @@ async function startServer() {
     res.status(201).json(newAch);
   });
 
-  adminRouter.put('/achievements/:id', (req, res) => {
+  adminRouter.put('/achievements/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.achievements.findIndex((a) => a.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Achievement not found' });
@@ -1203,14 +1770,14 @@ async function startServer() {
     res.json(db.achievements[index]);
   });
 
-  adminRouter.delete('/achievements/:id', (req, res) => {
+  adminRouter.delete('/achievements/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     db.achievements = db.achievements.filter((a) => a.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Gallery Management
-  adminRouter.post('/gallery', (req, res) => {
+  // Admin Gallery Management (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.post('/gallery', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const newGal: GalleryImage = {
       ...req.body,
       id: `gal-${Date.now()}`,
@@ -1220,7 +1787,7 @@ async function startServer() {
     res.status(201).json(newGal);
   });
 
-  adminRouter.put('/gallery/:id', (req, res) => {
+  adminRouter.put('/gallery/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.gallery.findIndex((g) => g.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Gallery item not found' });
@@ -1231,18 +1798,18 @@ async function startServer() {
     res.json(db.gallery[index]);
   });
 
-  adminRouter.delete('/gallery/:id', (req, res) => {
+  adminRouter.delete('/gallery/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     db.gallery = db.gallery.filter((g) => g.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Messages Management
-  adminRouter.get('/messages', (req, res) => {
+  // Admin Messages Management (SUPER_ADMIN, ADMIN)
+  adminRouter.get('/messages', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.messages);
   });
 
-  adminRouter.patch('/messages/:id', (req, res) => {
+  adminRouter.patch('/messages/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const msg = db.messages.find((m) => m.id === req.params.id);
     if (!msg) {
       res.status(404).json({ error: 'Message not found' });
@@ -1254,33 +1821,33 @@ async function startServer() {
     res.json(msg);
   });
 
-  adminRouter.delete('/messages/:id', (req, res) => {
+  adminRouter.delete('/messages/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.messages = db.messages.filter((m) => m.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
   // Admin Stats & Settings Update
-  adminRouter.put('/stats', (req, res) => {
+  adminRouter.put('/stats', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.stats = { ...db.stats, ...req.body };
     saveDatabase(db);
     res.json(db.stats);
   });
 
-  adminRouter.put('/settings', (req, res) => {
+  adminRouter.put('/settings', requireRole('SUPER_ADMIN'), (req, res) => {
     db.settings = { ...db.settings, ...req.body };
     saveDatabase(db);
     res.json(db.settings);
   });
 
   // ==========================================
-  // ADMIN CERTIFICATES MANAGEMENT
+  // ADMIN CERTIFICATES MANAGEMENT (SUPER_ADMIN, ADMIN)
   // ==========================================
-  adminRouter.get('/certificates', (req, res) => {
+  adminRouter.get('/certificates', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.certificates);
   });
 
-  adminRouter.post('/certificates', (req, res) => {
+  adminRouter.post('/certificates', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const body = req.body;
     const certCode = body.certificate_code || `IZ-2026-${Math.random().toString(36).substr(2, 4).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -1308,7 +1875,7 @@ async function startServer() {
     res.status(201).json(newCert);
   });
 
-  adminRouter.post('/certificates/batch', (req, res) => {
+  adminRouter.post('/certificates/batch', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const { event_id, event_title, certificate_type, issue_date, issued_by, designation, students } = req.body;
 
     if (!Array.isArray(students) || students.length === 0) {
@@ -1349,7 +1916,7 @@ async function startServer() {
     });
   });
 
-  adminRouter.put('/certificates/:id', (req, res) => {
+  adminRouter.put('/certificates/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const index = db.certificates.findIndex((c) => c.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Certificate not found' });
@@ -1360,16 +1927,16 @@ async function startServer() {
     res.json(db.certificates[index]);
   });
 
-  adminRouter.delete('/certificates/:id', (req, res) => {
+  adminRouter.delete('/certificates/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.certificates = db.certificates.filter((c) => c.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true, message: 'Certificate revoked and deleted' });
   });
 
   // ==========================================
-  // ADMIN ATTENDANCE / EVENT CHECK-IN
+  // ADMIN ATTENDANCE / EVENT CHECK-IN (SUPER_ADMIN, ADMIN)
   // ==========================================
-  adminRouter.get('/checkins', (req, res) => {
+  adminRouter.get('/checkins', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const eventId = req.query.event_id as string;
     let list = db.checkins;
     if (eventId) {
@@ -1378,7 +1945,7 @@ async function startServer() {
     res.json(list);
   });
 
-  adminRouter.post('/checkin', (req, res) => {
+  adminRouter.post('/checkin', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const { code, event_id, registration_id, roll_number, email, method } = req.body;
     const queryTerm = (code || roll_number || email || registration_id || '').trim().toLowerCase();
 
@@ -1442,30 +2009,30 @@ async function startServer() {
     });
   });
 
-  adminRouter.delete('/checkins/:id', (req, res) => {
+  adminRouter.delete('/checkins/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.checkins = db.checkins.filter((c) => c.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true, message: 'Check-in record removed' });
   });
 
   // ==========================================
-  // ADMIN NEWSLETTER & BROADCASTS
+  // ADMIN NEWSLETTER & BROADCASTS (SUPER_ADMIN, ADMIN)
   // ==========================================
-  adminRouter.get('/newsletter/subscribers', (req, res) => {
+  adminRouter.get('/newsletter/subscribers', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.newsletter_subscribers);
   });
 
-  adminRouter.delete('/newsletter/subscribers/:id', (req, res) => {
+  adminRouter.delete('/newsletter/subscribers/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.newsletter_subscribers = db.newsletter_subscribers.filter((s) => s.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  adminRouter.get('/newsletter/broadcasts', (req, res) => {
+  adminRouter.get('/newsletter/broadcasts', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.newsletter_broadcasts);
   });
 
-  adminRouter.post('/newsletter/broadcast', (req, res) => {
+  adminRouter.post('/newsletter/broadcast', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     const { subject, message, target } = req.body;
     if (!subject || !message) {
       res.status(400).json({ error: 'Subject and message are required for newsletter broadcast.' });
@@ -1494,9 +2061,9 @@ async function startServer() {
   });
 
   // ==========================================
-  // ADMIN LEARNING RESOURCES
+  // ADMIN LEARNING RESOURCES (SUPER_ADMIN, ADMIN, EDITOR)
   // ==========================================
-  adminRouter.post('/resources', (req, res) => {
+  adminRouter.post('/resources', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const slug = req.body.slug || req.body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const newRes: LearningResource = {
       ...req.body,
@@ -1509,7 +2076,7 @@ async function startServer() {
     res.status(201).json(newRes);
   });
 
-  adminRouter.put('/resources/:id', (req, res) => {
+  adminRouter.put('/resources/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const index = db.resources.findIndex((r) => r.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Resource not found' });
@@ -1520,7 +2087,7 @@ async function startServer() {
     res.json(db.resources[index]);
   });
 
-  adminRouter.delete('/resources/:id', (req, res) => {
+  adminRouter.delete('/resources/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const item = db.resources.find((r) => r.id === req.params.id);
     db.resources = db.resources.filter((r) => r.id !== req.params.id);
     saveDatabase(db);
@@ -1529,30 +2096,34 @@ async function startServer() {
   });
 
   // ==========================================
-  // ADMIN AUDIT LOGS
+  // ADMIN AUDIT LOGS (SUPER_ADMIN, ADMIN)
   // ==========================================
-  adminRouter.get('/audit-logs', (req, res) => {
+  adminRouter.get('/audit-logs', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.audit_logs || []);
   });
 
   // ==========================================
-  // ADMIN DATABASE BACKUP & RESTORE
+  // ADMIN DATABASE BACKUP & RESTORE (SUPER_ADMIN ONLY)
   // ==========================================
-  adminRouter.get('/backup/export', (req, res) => {
+  adminRouter.get('/backup/export', requireRole('SUPER_ADMIN'), (req, res) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupFileName = `backup-${timestamp}.json`;
     const backupFilePath = path.join(BACKUPS_DIR, backupFileName);
 
-    // Filter out internal password hashes/salts in the export for security
+    // Sanitize internal password hashes and salts in the export for security
     const exportableDb = {
       ...db,
       admin_users: db.admin_users.map((u) => ({
         id: u.id,
+        name: u.name,
         username: u.username,
         email: u.email,
         role: u.role,
+        status: u.status,
         created_at: u.created_at,
         updated_at: u.updated_at,
+        last_login_at: u.last_login_at,
+        created_by: u.created_by,
       })),
       exported_at: new Date().toISOString(),
       institution: 'DR. K. V. SUBBA REDDY INSTITUTE OF TECHNOLOGY',
@@ -1572,7 +2143,7 @@ async function startServer() {
     res.json(exportableDb);
   });
 
-  adminRouter.post('/backup/restore', (req, res) => {
+  adminRouter.post('/backup/restore', requireRole('SUPER_ADMIN'), (req, res) => {
     const backupData = req.body;
     if (!backupData || typeof backupData !== 'object') {
       res.status(400).json({ error: 'Invalid backup payload. Expected a valid JSON database schema.' });

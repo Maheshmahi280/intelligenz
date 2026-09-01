@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../lib/api';
-import { Shield, Lock, Mail, AlertCircle, Eye, EyeOff, ArrowLeft, KeyRound, CheckCircle2 } from 'lucide-react';
+import { Shield, Lock, Mail, AlertCircle, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { IntelligenzLogo } from '../components/IntelligenzLogo';
 
 interface AdminLoginPageProps {
@@ -12,8 +12,8 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
   onLoginSuccess,
   onNavigate,
 }) => {
-  const [identifier, setIdentifier] = useState('mahigamingzone2@gmail.com');
-  const [password, setPassword] = useState('intelligenz2026');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,23 +24,19 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
     setError(null);
 
     try {
+      const trimmedIdentifier = identifier.trim();
       const res = await api.adminLogin({
-        email: identifier.includes('@') ? identifier : undefined,
-        username: !identifier.includes('@') ? identifier : undefined,
+        identifier: trimmedIdentifier,
+        email: trimmedIdentifier.includes('@') ? trimmedIdentifier : undefined,
+        username: !trimmedIdentifier.includes('@') ? trimmedIdentifier : undefined,
         password,
       });
       onLoginSuccess(res.token);
     } catch (err: any) {
-      setError(err.message || 'Invalid admin credentials');
+      setError(err.message || 'Invalid administrator credentials.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleUsePreset = (user: string, pass: string) => {
-    setIdentifier(user);
-    setPassword(pass);
-    setError(null);
   };
 
   return (
@@ -52,7 +48,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
         <button
           id="admin-back-to-home-btn"
           onClick={() => onNavigate('/')}
-          className="inline-flex items-center gap-1.5 text-xs text-[#6B7280] hover:text-[#00E5FF] transition-colors mb-6 font-medium"
+          className="inline-flex items-center gap-1.5 text-xs text-[#6B7280] hover:text-[#00E5FF] transition-colors mb-6 font-medium cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Public Website</span>
@@ -62,20 +58,22 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
           <div className="flex justify-center">
             <IntelligenzLogo size="sm" interactive={false} />
           </div>
-          <h1 className="text-2xl font-black text-white font-['Outfit'] tracking-tight">
-            Admin Management Portal
-          </h1>
-          <p className="text-xs text-[#9CA3AF]">
-            IntelliGenZ Control Suite &amp; Database Management
-          </p>
-          <div className="inline-block px-2.5 py-0.5 rounded-full bg-[#1A1C23] border border-[#2A2E3D] text-[10px] uppercase font-bold tracking-widest text-[#00E5FF]">
-            CSE (AIML) &amp; AI • DR. KVSRIT
+          <div className="space-y-0.5">
+            <div className="text-xs font-bold uppercase tracking-widest text-[#00E5FF] font-['Outfit']">
+              INTELLIGENZ CLUB
+            </div>
+            <h1 className="text-2xl font-black text-white font-['Outfit'] tracking-tight">
+              ADMIN PORTAL
+            </h1>
           </div>
+          <p className="text-xs text-[#9CA3AF]">
+            CSE (AIML) &amp; AI • DR. KVSRIT
+          </p>
         </div>
 
         {error && (
-          <div className="mb-5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="mb-5 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
             <span>{error}</span>
           </div>
         )}
@@ -83,7 +81,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[#D1D5DB] mb-1.5 uppercase tracking-wider">
-              Admin Email or Username
+              ADMIN EMAIL OR USERNAME
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-[#6B7280] absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -91,9 +89,10 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 id="admin-login-identifier"
                 type="text"
                 required
+                autoComplete="username"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="e.g. mahigamingzone2@gmail.com or admin"
+                placeholder="Enter admin email or username"
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#0A0B0E] border border-[#1A1C23] text-white text-xs placeholder:text-[#4B5563] focus:outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-colors"
               />
             </div>
@@ -102,12 +101,12 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold text-[#D1D5DB] uppercase tracking-wider">
-                Password / Secret Key
+                PASSWORD
               </label>
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="text-[11px] text-[#6B7280] hover:text-[#00E5FF] flex items-center gap-1 transition-colors"
+                className="text-[11px] text-[#6B7280] hover:text-[#00E5FF] flex items-center gap-1 transition-colors cursor-pointer"
               >
                 {showPassword ? (
                   <>
@@ -128,6 +127,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
                 id="admin-login-password"
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter password"
@@ -136,38 +136,12 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
             </div>
           </div>
 
-          {/* Quick preset selector for ease of access */}
-          <div className="p-3 bg-[#0A0B0E] border border-[#1A1C23] rounded-xl text-left space-y-1.5">
-            <div className="flex items-center justify-between text-[10px] font-bold text-[#6B7280] uppercase tracking-wider">
-              <span className="flex items-center gap-1">
-                <KeyRound className="w-3 h-3 text-[#00E5FF]" />
-                Standard Credentials
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              <button
-                type="button"
-                onClick={() => handleUsePreset('mahigamingzone2@gmail.com', 'intelligenz2026')}
-                className="px-2.5 py-1 rounded bg-[#1A1C23] hover:bg-[#252833] text-[10px] text-[#00E5FF] font-medium transition-colors border border-[#00E5FF]/20"
-              >
-                Personal Gmail: mahigamingzone2@gmail.com
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUsePreset('admin', 'intelligenz2026')}
-                className="px-2.5 py-1 rounded bg-[#1A1C23] hover:bg-[#252833] text-[10px] text-[#9CA3AF] font-medium transition-colors border border-[#1A1C23]"
-              >
-                Username: admin
-              </button>
-            </div>
-          </div>
-
           <div className="pt-2">
             <button
               id="admin-login-submit-btn"
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-[#00E5FF] hover:bg-[#33ebff] font-bold text-xs text-[#0A0B0E] uppercase tracking-widest shadow-lg shadow-[#00E5FF]/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-lg bg-[#00E5FF] hover:bg-[#33ebff] font-bold text-xs text-[#0A0B0E] uppercase tracking-widest shadow-lg shadow-[#00E5FF]/20 active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? (
                 <>
@@ -177,7 +151,7 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({
               ) : (
                 <>
                   <Shield className="w-4 h-4" />
-                  <span>Sign In to Admin Portal</span>
+                  <span>SIGN IN TO ADMIN PORTAL</span>
                 </>
               )}
             </button>

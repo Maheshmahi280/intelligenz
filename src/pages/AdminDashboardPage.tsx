@@ -27,6 +27,7 @@ import {
   BarChart3,
   Settings,
   ShieldCheck,
+  ShieldAlert,
   Database,
   LogOut,
   Sparkles,
@@ -43,6 +44,7 @@ import {
 } from 'lucide-react';
 
 // Subcomponents
+import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { AdminOverviewTab } from '../components/admin/AdminOverviewTab';
 import { AdminEventsTab } from '../components/admin/AdminEventsTab';
 import { AdminAnnouncementsTab } from '../components/admin/AdminAnnouncementsTab';
@@ -56,11 +58,13 @@ import { AdminMessagesTab } from '../components/admin/AdminMessagesTab';
 import { AdminStatsTab } from '../components/admin/AdminStatsTab';
 import { AdminSettingsTab } from '../components/admin/AdminSettingsTab';
 import { AdminProfileTab } from '../components/admin/AdminProfileTab';
+import { AdminManagementTab } from '../components/admin/AdminManagementTab';
 import { AdminSqlTab } from '../components/admin/AdminSqlTab';
 import { AdminCertificatesTab } from '../components/admin/AdminCertificatesTab';
 import { AdminAttendanceTab } from '../components/admin/AdminAttendanceTab';
 import { AdminNewsletterTab } from '../components/admin/AdminNewsletterTab';
 import { AdminResourcesTab } from '../components/admin/AdminResourcesTab';
+import { authStorage } from '../lib/api';
 
 interface AdminDashboardPageProps {
   onLogout: () => void;
@@ -86,6 +90,7 @@ export type AdminTab =
   | 'stats'
   | 'settings'
   | 'profile'
+  | 'admin-management'
   | 'sql';
 
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
@@ -95,6 +100,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+
+  // Current logged in admin profile
+  const [currentAdminRole, setCurrentAdminRole] = useState<string>(() => {
+    const cached = authStorage.getUser();
+    return cached?.role || 'ADMIN';
+  });
 
   // Data States
   const [events, setEvents] = useState<Event[]>([]);
@@ -136,6 +148,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         settRes,
         overRes,
         sqlRes,
+        profileRes,
       ] = await Promise.all([
         api.getEvents(),
         api.getAnnouncements(),
@@ -150,6 +163,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         api.getSettings(),
         api.getOverviewStats().catch(() => null),
         api.getSupabaseSchema().catch(() => ({ schema: '' })),
+        api.getAdminProfile().catch(() => null),
       ]);
 
       setEvents(evRes || []);
@@ -165,6 +179,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setSettings(settRes || null);
       setOverviewData(overRes);
       setSqlSchema(sqlRes?.schema || '');
+
+      if (profileRes?.role) {
+        setCurrentAdminRole(profileRes.role);
+        authStorage.setUser(profileRes);
+      }
     } catch (err: any) {
       console.error('Error fetching admin data:', err);
       showFeedback(err.message || 'Failed to fetch admin data', 'error');
@@ -470,6 +489,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
+  const isSuperAdmin = currentAdminRole === 'SUPER_ADMIN';
+
   const navItems: { id: AdminTab; label: string; icon: any; count?: number; badgeColor?: string }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'events', label: 'Events & Workshops', icon: Calendar, count: events.length },
@@ -500,6 +521,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     { id: 'stats', label: 'Club Statistics', icon: BarChart3 },
     { id: 'settings', label: 'Site Settings', icon: Settings },
     { id: 'profile', label: 'Admin Security', icon: ShieldCheck },
+    ...(isSuperAdmin
+      ? [{ id: 'admin-management' as AdminTab, label: 'Admin Management', icon: ShieldAlert }]
+      : []),
     { id: 'sql', label: 'Supabase SQL Export', icon: Database },
   ];
 
@@ -577,8 +601,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </span>
           </button>
           <button
-            onClick={onLogout}
-            className="w-full px-3 py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-2 transition-all font-semibold"
+            onClick={() => setShowSignOutConfirm(true)}
+            className="w-full px-3 py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-2 transition-all font-semibold cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Sign Out</span>
@@ -649,8 +673,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               Public Site
             </button>
             <button
-              onClick={onLogout}
-              className="flex-1 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setShowSignOutConfirm(true);
+              }}
+              className="flex-1 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold cursor-pointer"
             >
               Sign Out
             </button>
@@ -821,8 +848,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
         {activeTab === 'profile' && <AdminProfileTab />}
 
+        {activeTab === 'admin-management' && isSuperAdmin && <AdminManagementTab />}
+
         {activeTab === 'sql' && <AdminSqlTab sqlSchema={sqlSchema} />}
       </main>
+
+      {/* Sign Out Confirmation Modal */}
+      <SignOutConfirmModal
+        isOpen={showSignOutConfirm}
+        onConfirm={onLogout}
+        onCancel={() => setShowSignOutConfirm(false)}
+      />
     </div>
   );
 };
