@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { GalleryImage } from '../../types';
 import { DeleteConfirmModal } from '../DeleteConfirmModal';
+import { ImageUploader } from './ImageUploader';
 
 interface AdminGalleryTabProps {
   gallery: GalleryImage[];
@@ -51,7 +52,7 @@ export const AdminGalleryTab: React.FC<AdminGalleryTabProps> = ({
       title: '',
       album: albums[0] || 'Workshops 2026',
       event_name: '',
-      image_url: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&w=1000&q=80',
+      image_url: '',
       caption: '',
       date: new Date().toISOString().split('T')[0],
       featured: false,
@@ -282,16 +283,14 @@ export const AdminGalleryTab: React.FC<AdminGalleryTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#D1D5DB] mb-1">
-                  Image URL *
-                </label>
-                <input
-                  type="url"
-                  required
+                <ImageUploader
                   value={editingItem.image_url || ''}
-                  onChange={(e) => setEditingItem({ ...editingItem, image_url: e.target.value })}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2 rounded-lg bg-[#0A0B0E] border border-[#1A1C23] text-xs text-white focus:outline-none focus:border-emerald-400"
+                  onChange={(url) => setEditingItem({ ...editingItem, image_url: url })}
+                  category="gallery"
+                  label="Image Upload *"
+                  required
+                  aspectRatio="video"
+                  helpText="Supported formats: JPG, PNG, WEBP (Max 50 MB)"
                 />
               </div>
 
@@ -318,8 +317,8 @@ export const AdminGalleryTab: React.FC<AdminGalleryTabProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
-                  className="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold uppercase tracking-wider disabled:opacity-50"
+                  disabled={saving || !editingItem.title?.trim() || !editingItem.album?.trim() || !editingItem.date || !editingItem.image_url?.trim()}
+                  className="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
                   {saving ? 'Saving...' : editingItem.id ? 'Update Photo' : 'Add Photo'}
                 </button>

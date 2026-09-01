@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { TeamMember, TeamCategory } from '../../types';
 import { DeleteConfirmModal } from '../DeleteConfirmModal';
+import { ImageUploader } from './ImageUploader';
 
 interface AdminTeamTabProps {
   team: TeamMember[];
@@ -65,7 +66,7 @@ export const AdminTeamTab: React.FC<AdminTeamTabProps> = ({
       department: 'CSE (AIML) & AI',
       year: '3rd Year',
       bio: '',
-      image_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+      image_url: '',
       order_index: (team.length + 1) * 10,
       social_links: {
         linkedin: '',
@@ -348,15 +349,13 @@ export const AdminTeamTab: React.FC<AdminTeamTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#D1D5DB] mb-1">
-                  Avatar / Profile Image URL
-                </label>
-                <input
-                  type="url"
+                <ImageUploader
                   value={editingMember.image_url || ''}
-                  onChange={(e) => setEditingMember({ ...editingMember, image_url: e.target.value })}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2 rounded-lg bg-[#0A0B0E] border border-[#1A1C23] text-xs text-white focus:outline-none focus:border-indigo-400"
+                  onChange={(url) => setEditingMember({ ...editingMember, image_url: url })}
+                  category="team"
+                  label="Avatar / Profile Image"
+                  aspectRatio="square"
+                  helpText="Supported formats: JPG, PNG, WEBP (Max 50 MB)"
                 />
               </div>
 

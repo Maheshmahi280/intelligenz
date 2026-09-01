@@ -92,13 +92,17 @@ interface DatabaseSchema {
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 
-// Ensure data and backup directories exist
+// Ensure data, backup, and uploads directories exist
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 if (!fs.existsSync(BACKUPS_DIR)) {
   fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+}
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
 function hashPassword(password: string, salt: string): string {
@@ -426,8 +430,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Support up to 75MB request payload to allow 50MB binary uploads via base64 safely
+  app.use(express.json({ limit: '75mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '75mb' }));
+
+  // Serve persistent uploaded images statically BEFORE Vite and SPA fallback
+  app.use('/uploads', express.static(UPLOADS_DIR));
+  app.use('/api/uploads', express.static(UPLOADS_DIR));
 
   // Request logger for API calls
   app.use((req, res, next) => {
@@ -2097,6 +2106,117 @@ async function startServer() {
 
   // ==========================================
   // ADMIN AUDIT LOGS (SUPER_ADMIN, ADMIN)
+  // ==========================================
+  // IMAGE UPLOAD SYSTEM (50 MB Persistent Storage)
+  // ==========================================
+  adminRouter.post('/uploads/image', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { filename, data, contentType, category } = req.body;
+      if (!data || typeof data !== 'string') {
+        res.status(400).json({ error: 'Image data payload is required.' });
+        return;
+      }
+
+      // Parse base64 data
+      const matches = data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      let mimeType = (contentType || '').toLowerCase();
+      let base64Data = data;
+
+      if (matches && matches.length === 3) {
+        mimeType = matches[1].toLowerCase();
+        base64Data = matches[2];
+      }
+
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      // Maximum 50 MB limit
+      const MAX_SIZE_BYTES = 50 * 1024 * 1024;
+      if (buffer.length > MAX_SIZE_BYTES) {
+        res.status(400).json({ error: 'Image size must be 50 MB or less.' });
+        return;
+      }
+
+      if (buffer.length === 0) {
+        res.status(400).json({ error: 'Uploaded file is empty.' });
+        return;
+      }
+
+      // Magic byte verification for secure content inspection (JPEG, PNG, WEBP)
+      let extension = '';
+      let verifiedMime = '';
+
+      const isJpeg = buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+      const isPng =
+        buffer.length >= 8 &&
+        buffer[0] === 0x89 &&
+        buffer[1] === 0x50 &&
+        buffer[2] === 0x4e &&
+        buffer[3] === 0x47 &&
+        buffer[4] === 0x0d &&
+        buffer[5] === 0x0a &&
+        buffer[6] === 0x1a &&
+        buffer[7] === 0x0a;
+      const isWebp =
+        buffer.length >= 12 &&
+        buffer[0] === 0x52 &&
+        buffer[1] === 0x49 &&
+        buffer[2] === 0x46 &&
+        buffer[3] === 0x46 &&
+        buffer[8] === 0x57 &&
+        buffer[9] === 0x45 &&
+        buffer[10] === 0x42 &&
+        buffer[11] === 0x50;
+
+      if (isJpeg) {
+        extension = 'jpg';
+        verifiedMime = 'image/jpeg';
+      } else if (isPng) {
+        extension = 'png';
+        verifiedMime = 'image/png';
+      } else if (isWebp) {
+        extension = 'webp';
+        verifiedMime = 'image/webp';
+      } else {
+        res.status(400).json({ error: 'Please upload a JPG, JPEG, PNG, or WEBP image.' });
+        return;
+      }
+
+      // Safe randomized filename (prevents directory traversal and collisions)
+      const safeId = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+      const prefix = category && /^[a-z0-9_-]+$/i.test(category) ? `${category}-` : 'img-';
+      const safeFilename = `${prefix}${safeId}.${extension}`;
+      const targetFilePath = path.join(UPLOADS_DIR, safeFilename);
+
+      // Write binary file to persistent uploads directory
+      fs.writeFileSync(targetFilePath, buffer);
+
+      // Log in admin audit logs
+      logAdminAction(
+        'Image Upload',
+        'Uploads',
+        safeFilename,
+        `Uploaded image '${path.basename(filename || safeFilename)}' (${(buffer.length / (1024 * 1024)).toFixed(2)} MB, ${verifiedMime})`,
+        req.adminUser?.email || 'admin@drkvsrit.ac.in',
+        req
+      );
+
+      const publicUrl = `/uploads/${safeFilename}`;
+      res.status(201).json({
+        success: true,
+        url: publicUrl,
+        filename: safeFilename,
+        original_name: path.basename(filename || 'image'),
+        size: buffer.length,
+        mime_type: verifiedMime,
+      });
+    } catch (err: any) {
+      console.error('Image upload failed:', err);
+      res.status(500).json({ error: 'Image upload failed. Please try again.' });
+    }
+  });
+
+  // ==========================================
+  // AUDIT LOGS (SUPER_ADMIN, ADMIN)
   // ==========================================
   adminRouter.get('/audit-logs', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     res.json(db.audit_logs || []);

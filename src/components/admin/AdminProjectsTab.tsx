@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Project, ProjectCategory } from '../../types';
 import { DeleteConfirmModal } from '../DeleteConfirmModal';
+import { ImageUploader } from './ImageUploader';
 
 interface AdminProjectsTabProps {
   projects: Project[];
@@ -62,7 +63,7 @@ export const AdminProjectsTab: React.FC<AdminProjectsTabProps> = ({
       status: 'Active Development',
       description: '',
       technologies: ['Python', 'PyTorch', 'FastAPI'],
-      image_url: 'https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=800&q=80',
+      image_url: '',
       github_url: 'https://github.com/intelligenz-club',
       demo_url: '',
       featured: false,
@@ -324,6 +325,17 @@ export const AdminProjectsTab: React.FC<AdminProjectsTabProps> = ({
                   onChange={(e) => setTechInput(e.target.value)}
                   placeholder="e.g. PyTorch, YOLOv9, OpenCV, FastAPI, React"
                   className="w-full px-3.5 py-2 rounded-lg bg-[#0A0B0E] border border-[#1A1C23] text-xs text-white focus:outline-none focus:border-[#00E5FF]"
+                />
+              </div>
+
+              <div>
+                <ImageUploader
+                  value={editingProject.image_url || ''}
+                  onChange={(url) => setEditingProject({ ...editingProject, image_url: url })}
+                  category="projects"
+                  label="Project Screenshot / Architecture Diagram"
+                  aspectRatio="banner"
+                  helpText="Supported formats: JPG, PNG, WEBP (Max 50 MB)"
                 />
               </div>
 

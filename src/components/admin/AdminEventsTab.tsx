@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Event, EventCategory, EventStatus } from '../../types';
 import { DeleteConfirmModal } from '../DeleteConfirmModal';
+import { ImageUploader } from './ImageUploader';
 
 interface AdminEventsTabProps {
   events: Event[];
@@ -82,7 +83,8 @@ export const AdminEventsTab: React.FC<AdminEventsTabProps> = ({
       venue: 'Main Seminar Hall / AI Lab 301',
       description: '',
       short_description: '',
-      banner_image: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80',
+      banner_image: '',
+      event_image: '',
       featured: false,
       maximum_participants: 120,
       current_participants: 0,
@@ -415,15 +417,13 @@ export const AdminEventsTab: React.FC<AdminEventsTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#D1D5DB] mb-1">
-                  Banner Image URL
-                </label>
-                <input
-                  type="url"
-                  value={editingEvent.banner_image || ''}
-                  onChange={(e) => setEditingEvent({ ...editingEvent, banner_image: e.target.value })}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2 rounded-lg bg-[#0A0B0E] border border-[#1A1C23] text-xs text-white focus:outline-none focus:border-[#00E5FF]"
+                <ImageUploader
+                  value={editingEvent.banner_image || editingEvent.event_image || ''}
+                  onChange={(url) => setEditingEvent({ ...editingEvent, banner_image: url, event_image: url })}
+                  category="events"
+                  label="Event Banner Image"
+                  aspectRatio="banner"
+                  helpText="Supported formats: JPG, PNG, WEBP (Max 50 MB)"
                 />
               </div>
 

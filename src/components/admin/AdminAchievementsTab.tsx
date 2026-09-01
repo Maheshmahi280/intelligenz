@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Achievement } from '../../types';
 import { DeleteConfirmModal } from '../DeleteConfirmModal';
+import { ImageUploader } from './ImageUploader';
 
 interface AdminAchievementsTabProps {
   achievements: Achievement[];
@@ -64,7 +65,7 @@ export const AdminAchievementsTab: React.FC<AdminAchievementsTabProps> = ({
       description: '',
       members: ['Team IntelliGenZ'],
       proof_url: '',
-      image_url: 'https://images.unsplash.com/photo-1578269174936-2709b6aeb913?auto=format&fit=crop&w=800&q=80',
+      image_url: '',
     });
     setMembersInput('Team IntelliGenZ');
     setIsModalOpen(true);
@@ -343,6 +344,17 @@ export const AdminAchievementsTab: React.FC<AdminAchievementsTabProps> = ({
                   onChange={(e) => setMembersInput(e.target.value)}
                   placeholder="e.g. Mahesh K, Sai Charan, Priya Sharma"
                   className="w-full px-3.5 py-2 rounded-lg bg-[#0A0B0E] border border-[#1A1C23] text-xs text-white focus:outline-none focus:border-yellow-400"
+                />
+              </div>
+
+              <div>
+                <ImageUploader
+                  value={editingAchievement.image_url || ''}
+                  onChange={(url) => setEditingAchievement({ ...editingAchievement, image_url: url })}
+                  category="achievements"
+                  label="Achievement Photo / Trophy / Certificate"
+                  aspectRatio="video"
+                  helpText="Supported formats: JPG, PNG, WEBP (Max 50 MB)"
                 />
               </div>
 

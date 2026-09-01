@@ -220,6 +220,40 @@ export const api = {
     }
   },
 
+  // Image Upload System (50 MB Persistent Storage)
+  uploadImage: async (
+    file: File,
+    category: string = 'media'
+  ): Promise<{ url: string; filename: string; size: number; mime_type: string; original_name?: string }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Failed to read file for upload.'));
+      reader.onload = async () => {
+        try {
+          const base64Data = reader.result as string;
+          const res = await fetch('/api/admin/uploads/image', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({
+              filename: file.name,
+              contentType: file.type,
+              data: base64Data,
+              category,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'Image upload failed. Please try again.');
+          }
+          resolve(data);
+        } catch (err: any) {
+          reject(err);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  },
+
   // Admin Whitelist & Access Control Management (Super Admin)
   adminGetAdmins: async () => {
     const res = await fetch('/api/admin/admins', { headers: authHeaders() });
