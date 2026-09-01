@@ -151,17 +151,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         sqlRes,
         profileRes,
       ] = await Promise.all([
-        api.getEvents(),
-        api.getAnnouncements(),
-        api.getProjects(),
-        api.getTeam(),
-        api.getAchievements(),
-        api.getGallery(),
-        api.getApplications(),
-        api.getRegistrations(),
-        api.getMessages(),
-        api.getStats(),
-        api.getSettings(),
+        api.getEvents().catch((err) => { console.warn('Could not load events:', err); return []; }),
+        api.getAnnouncements().catch((err) => { console.warn('Could not load announcements:', err); return []; }),
+        api.getProjects().catch((err) => { console.warn('Could not load projects:', err); return []; }),
+        api.getTeam().catch((err) => { console.warn('Could not load team:', err); return []; }),
+        api.getAchievements().catch((err) => { console.warn('Could not load achievements:', err); return []; }),
+        api.getGallery().catch((err) => { console.warn('Could not load gallery:', err); return []; }),
+        api.getApplications().catch((err) => { console.warn('Could not load applications:', err); return []; }),
+        api.getRegistrations().catch((err) => { console.warn('Could not load registrations:', err); return []; }),
+        api.getMessages().catch((err) => { console.warn('Could not load messages:', err); return []; }),
+        api.getStats().catch((err) => { console.warn('Could not load stats:', err); return null; }),
+        api.getSettings().catch((err) => { console.warn('Could not load settings:', err); return null; }),
         api.getOverviewStats().catch(() => null),
         api.getSupabaseSchema().catch(() => ({ schema: '' })),
         api.getAdminProfile().catch(() => null),
@@ -185,10 +185,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         setCurrentAdminRole(profileRes.role);
         setCurrentUser(profileRes);
         authStorage.setUser(profileRes);
+      } else if (!authStorage.getToken()) {
+        onLogout();
       }
     } catch (err: any) {
       console.error('Error fetching admin data:', err);
-      showFeedback(err.message || 'Failed to fetch admin data', 'error');
     } finally {
       setLoading(false);
       setRefreshing(false);

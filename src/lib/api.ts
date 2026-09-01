@@ -518,8 +518,17 @@ export const api = {
 
   adminGetApplications: async (): Promise<JoinApplication[]> => {
     const res = await fetch('/api/admin/join-applications', { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed to load applications');
-    return res.json();
+    if (res.status === 401) {
+      authStorage.clearToken();
+      window.dispatchEvent(new CustomEvent('auth_state_changed', { detail: { authenticated: false } }));
+      return [];
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error || 'Failed to load applications');
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
   },
 
   adminUpdateApplicationStatus: async (id: string, status: string, reviewer_notes?: string) => {
@@ -528,7 +537,10 @@ export const api = {
       headers: authHeaders(),
       body: JSON.stringify({ status, reviewer_notes }),
     });
-    if (!res.ok) throw new Error('Failed to update application');
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error || 'Failed to update application');
+    }
     return res.json();
   },
 
@@ -537,15 +549,27 @@ export const api = {
       method: 'DELETE',
       headers: authHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to delete application');
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error || 'Failed to delete application');
+    }
     return res.json();
   },
 
   adminGetRegistrations: async (eventId?: string): Promise<EventRegistration[]> => {
     const url = eventId ? `/api/admin/registrations?event_id=${encodeURIComponent(eventId)}` : '/api/admin/registrations';
     const res = await fetch(url, { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed to load registrations');
-    return res.json();
+    if (res.status === 401) {
+      authStorage.clearToken();
+      window.dispatchEvent(new CustomEvent('auth_state_changed', { detail: { authenticated: false } }));
+      return [];
+    }
+    if (!res.ok) {
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.error || 'Failed to load registrations');
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
   },
 
   adminUpdateRegistrationStatus: async (id: string, status: string) => {
@@ -554,7 +578,10 @@ export const api = {
       headers: authHeaders(),
       body: JSON.stringify({ status }),
     });
-    if (!res.ok) throw new Error('Failed to update registration');
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error || 'Failed to update registration');
+    }
     return res.json();
   },
 
@@ -563,14 +590,26 @@ export const api = {
       method: 'DELETE',
       headers: authHeaders(),
     });
-    if (!res.ok) throw new Error('Failed to delete registration');
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error || 'Failed to delete registration');
+    }
     return res.json();
   },
 
   adminGetMessages: async (): Promise<ContactMessage[]> => {
     const res = await fetch('/api/admin/messages', { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed to load messages');
-    return res.json();
+    if (res.status === 401) {
+      authStorage.clearToken();
+      window.dispatchEvent(new CustomEvent('auth_state_changed', { detail: { authenticated: false } }));
+      return [];
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => null);
+      throw new Error(err?.error || 'Failed to load messages');
+    }
+    const data = await res.json();
+    return Array.isArray(data) ? data : [];
   },
 
   adminUpdateMessage: async (id: string, data: { is_read?: boolean; responded?: boolean }) => {

@@ -412,7 +412,39 @@ interface ActiveSession {
   mustChangePassword?: boolean;
 }
 
-const activeSessions = new Map<string, ActiveSession>();
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
+
+function loadSessions(): Map<string, ActiveSession> {
+  const map = new Map<string, ActiveSession>();
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const data = fs.readFileSync(SESSIONS_FILE, 'utf-8');
+      const arr = JSON.parse(data);
+      if (Array.isArray(arr)) {
+        const now = Date.now();
+        for (const s of arr) {
+          if (s && s.token && s.expiresAt > now) {
+            map.set(s.token, s);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error reading sessions file:', err);
+  }
+  return map;
+}
+
+function saveSessions(sessionsMap: Map<string, ActiveSession>) {
+  try {
+    const list = Array.from(sessionsMap.values()).filter((s) => s.expiresAt > Date.now());
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving sessions file:', err);
+  }
+}
+
+const activeSessions = loadSessions();
 
 function invalidateUserSessions(userId: string) {
   for (const [token, session] of activeSessions.entries()) {
@@ -420,6 +452,7 @@ function invalidateUserSessions(userId: string) {
       activeSessions.delete(token);
     }
   }
+  saveSessions(activeSessions);
 }
 
 function adminAuthMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
@@ -432,7 +465,10 @@ function adminAuthMiddleware(req: AuthenticatedRequest, res: Response, next: Nex
 
   const session = activeSessions.get(token);
   if (!session || session.expiresAt <= Date.now()) {
-    if (session) activeSessions.delete(token);
+    if (session) {
+      activeSessions.delete(token);
+      saveSessions(activeSessions);
+    }
     res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' });
     return;
   }
@@ -441,6 +477,7 @@ function adminAuthMiddleware(req: AuthenticatedRequest, res: Response, next: Nex
   const dbUser = db.admin_users.find((u) => u.id === session.userId);
   if (!dbUser || dbUser.status !== 'ACTIVE') {
     activeSessions.delete(token);
+    saveSessions(activeSessions);
     res.status(403).json({ error: 'Access denied: Administrator account is not active or has been revoked.' });
     return;
   }
@@ -1293,6 +1330,7 @@ async function startServer() {
       expiresAt,
       mustChangePassword: !!adminUser.must_change_password,
     });
+    saveSessions(activeSessions);
 
     logAdminAction(
       'Admin Login Success',
@@ -1358,6 +1396,7 @@ async function startServer() {
       if (session) {
         logAdminAction('Admin Logout', 'Auth', session.userId, `Administrator session signed out for ${session.email}`, session.email, req);
         activeSessions.delete(token);
+        saveSessions(activeSessions);
       }
     }
     res.json({ success: true, message: 'Signed out successfully.' });
@@ -2115,13 +2154,13 @@ async function startServer() {
     res.json({ success: true, message: 'Announcement deleted' });
   });
 
-  // Admin Join Applications Management (SUPER_ADMIN, ADMIN)
-  adminRouter.get('/join-applications', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
-    res.json(db.join_applications);
+  // Admin Join Applications Management (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.get('/join-applications', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
+    res.json(Array.isArray(db.join_applications) ? db.join_applications : []);
   });
 
-  adminRouter.patch('/join-applications/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
-    const app = db.join_applications.find((a) => a.id === req.params.id);
+  adminRouter.patch('/join-applications/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
+    const app = (db.join_applications || []).find((a) => a.id === req.params.id);
     if (!app) {
       res.status(404).json({ error: 'Application not found' });
       return;
@@ -2133,23 +2172,23 @@ async function startServer() {
   });
 
   adminRouter.delete('/join-applications/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
-    db.join_applications = db.join_applications.filter((a) => a.id !== req.params.id);
+    db.join_applications = (db.join_applications || []).filter((a) => a.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });
 
-  // Admin Registrations Management (SUPER_ADMIN, ADMIN)
-  adminRouter.get('/registrations', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
+  // Admin Registrations Management (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.get('/registrations', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
     const eventId = req.query.event_id as string;
-    let list = db.registrations;
+    let list = Array.isArray(db.registrations) ? db.registrations : [];
     if (eventId) {
       list = list.filter((r) => r.event_id === eventId);
     }
     res.json(list);
   });
 
-  adminRouter.patch('/registrations/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
-    const reg = db.registrations.find((r) => r.id === req.params.id);
+  adminRouter.patch('/registrations/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
+    const reg = (db.registrations || []).find((r) => r.id === req.params.id);
     if (!reg) {
       res.status(404).json({ error: 'Registration not found' });
       return;
@@ -2160,7 +2199,7 @@ async function startServer() {
   });
 
   adminRouter.delete('/registrations/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
-    db.registrations = db.registrations.filter((r) => r.id !== req.params.id);
+    db.registrations = (db.registrations || []).filter((r) => r.id !== req.params.id);
     saveDatabase(db);
     res.json({ success: true });
   });

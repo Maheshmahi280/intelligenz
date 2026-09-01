@@ -112,6 +112,13 @@ export default function App() {
     };
     window.addEventListener('popstate', handlePopState);
 
+    // Listen to auth state changes
+    const handleAuthStateChanged = () => {
+      setAdminToken(localStorage.getItem('intelligenz_admin_token'));
+    };
+    window.addEventListener('auth_state_changed', handleAuthStateChanged);
+    window.addEventListener('storage', handleAuthStateChanged);
+
     // Global shortcut '/' to open search
     const handleGlobalKey = (e: KeyboardEvent) => {
       if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
@@ -123,6 +130,8 @@ export default function App() {
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('auth_state_changed', handleAuthStateChanged);
+      window.removeEventListener('storage', handleAuthStateChanged);
       window.removeEventListener('keydown', handleGlobalKey);
     };
   }, []);
