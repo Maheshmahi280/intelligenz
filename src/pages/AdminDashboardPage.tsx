@@ -518,7 +518,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       count: messages.filter((m) => !m.is_read).length || undefined,
       badgeColor: 'bg-rose-500/20 text-rose-400',
     },
-    { id: 'stats', label: 'Club Statistics', icon: BarChart3 },
+    { id: 'stats', label: 'Community Impact & Stats', icon: BarChart3 },
     { id: 'settings', label: 'Site Settings', icon: Settings },
     { id: 'profile', label: 'Admin Security', icon: ShieldCheck },
     ...(isSuperAdmin

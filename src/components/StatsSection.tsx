@@ -1,44 +1,137 @@
 import React, { useState, useEffect } from 'react';
-import { SiteStats } from '../types';
-import { Users, CalendarCheck, Lightbulb, GraduationCap, Award, Flame } from 'lucide-react';
+import { SiteStats, CommunityImpactStat } from '../types';
+import { INITIAL_COMMUNITY_IMPACT_STATS } from '../data/initialData';
+import {
+  Users,
+  Calendar,
+  CalendarCheck,
+  Lightbulb,
+  GraduationCap,
+  Award,
+  Trophy,
+  Flame,
+  Sparkles,
+  Code2,
+  Terminal,
+  BookOpen,
+  Globe,
+  Cpu,
+  Brain,
+  Layers,
+  CheckCircle2,
+  Target,
+  Zap,
+  Star,
+  Activity,
+  Compass,
+} from 'lucide-react';
+
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  Users,
+  Students: Users,
+  Calendar,
+  CalendarCheck,
+  Events: CalendarCheck,
+  Lightbulb,
+  Projects: Lightbulb,
+  GraduationCap,
+  Labs: GraduationCap,
+  Award,
+  Trophy,
+  Wins: Award,
+  Flame,
+  Members: Flame,
+  Sparkles,
+  Code2,
+  Terminal,
+  BookOpen,
+  Globe,
+  Cpu,
+  Brain,
+  Layers,
+  CheckCircle2,
+  Target,
+  Zap,
+  Star,
+  Activity,
+  Compass,
+};
+
+function getIconComponent(iconName?: string) {
+  if (!iconName) return Users;
+  const normalized = iconName.trim();
+  return ICON_MAP[normalized] || Users;
+}
+
+// Animate numeric counters smoothly on mount
+const AnimatedStatValue: React.FC<{ value: string }> = ({ value }) => {
+  const [displayValue, setDisplayValue] = useState<string>(value);
+
+  useEffect(() => {
+    // Parse numeric prefix if present (e.g., "650+" -> 650, suffix "+")
+    const match = String(value).match(/^([^\d]*)(\d+)(.*)$/);
+    if (!match) {
+      setDisplayValue(value);
+      return;
+    }
+
+    const prefix = match[1] || '';
+    const targetNum = parseInt(match[2], 10);
+    const suffix = match[3] || '';
+
+    if (isNaN(targetNum) || targetNum === 0) {
+      setDisplayValue(value);
+      return;
+    }
+
+    let start = 0;
+    const duration = 1200;
+    const startTime = performance.now();
+
+    let animationFrameId: number;
+
+    const updateCount = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(start + (targetNum - start) * easeOut);
+      setDisplayValue(`${prefix}${current}${suffix}`);
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(updateCount);
+      } else {
+        setDisplayValue(value);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(updateCount);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [value]);
+
+  return <>{displayValue}</>;
+};
 
 interface StatsSectionProps {
   stats?: SiteStats;
 }
 
 export const StatsSection: React.FC<StatsSectionProps> = ({ stats }) => {
-  const items = [
-    {
-      label: 'Students Reached',
-      value: stats?.students_reached || '650+',
-      icon: Users,
-    },
-    {
-      label: 'Events & Sprints',
-      value: stats?.events_conducted || '28+',
-      icon: CalendarCheck,
-    },
-    {
-      label: 'Live AI Projects',
-      value: stats?.projects_completed || '14+',
-      icon: Lightbulb,
-    },
-    {
-      label: 'Technical Labs',
-      value: stats?.workshops_held || '18+',
-      icon: GraduationCap,
-    },
-    {
-      label: 'Hackathon Wins',
-      value: stats?.hackathon_wins || '8+',
-      icon: Award,
-    },
-    {
-      label: 'Core Members',
-      value: stats?.active_members || '120+',
-      icon: Flame,
-    },
-  ];
+  const [dynamicStats, setDynamicStats] = useState<CommunityImpactStat[]>(() => {
+    if (stats?.community_impact_stats && Array.isArray(stats.community_impact_stats) && stats.community_impact_stats.length > 0) {
+      return stats.community_impact_stats.filter((s) => s.active !== false);
+    }
+    return INITIAL_COMMUNITY_IMPACT_STATS;
+  });
+
+  useEffect(() => {
+    if (stats?.community_impact_stats && Array.isArray(stats.community_impact_stats) && stats.community_impact_stats.length > 0) {
+      setDynamicStats(stats.community_impact_stats.filter((s) => s.active !== false));
+    }
+  }, [stats]);
+
+  // Fallback if dynamicStats is empty
+  const displayItems = dynamicStats.length > 0 ? dynamicStats : INITIAL_COMMUNITY_IMPACT_STATS;
 
   return (
     <section id="club-stats-section" className="py-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
@@ -61,18 +154,19 @@ export const StatsSection: React.FC<StatsSectionProps> = ({ stats }) => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-          {items.map((item, idx) => {
-            const Icon = item.icon;
+          {displayItems.map((item) => {
+            const Icon = getIconComponent(item.icon);
             return (
               <div
-                key={idx}
+                key={item.id}
+                id={`stat-card-${item.id}`}
                 className="flex flex-col items-center text-center p-4 rounded-lg bg-[#0A0B0E] border border-[#1A1C23] hover:border-[#00E5FF]/40 transition-all duration-200 group"
               >
                 <div className="p-2.5 rounded-lg bg-[#0D1017] border border-[#1A1C23] text-[#00E5FF] mb-2.5 group-hover:scale-105 transition-transform">
                   <Icon className="w-4 h-4" />
                 </div>
                 <div className="text-2xl sm:text-3xl font-black text-white font-['Outfit'] tracking-tight group-hover:text-[#00E5FF] transition-colors">
-                  {item.value}
+                  <AnimatedStatValue value={item.value} />
                 </div>
                 <div className="text-[10px] uppercase tracking-wider font-semibold text-[#6B7280] mt-1 leading-tight">
                   {item.label}

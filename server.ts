@@ -10,6 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 import {
   INITIAL_SETTINGS,
   INITIAL_STATS,
+  INITIAL_COMMUNITY_IMPACT_STATS,
   INITIAL_EVENTS,
   INITIAL_ANNOUNCEMENTS,
   INITIAL_TEAM,
@@ -32,6 +33,7 @@ import {
   ContactMessage,
   SiteStats,
   SiteSettings,
+  CommunityImpactStat,
   Certificate,
   NewsletterSubscriber,
   NewsletterBroadcast,
@@ -71,6 +73,7 @@ export interface AuthenticatedRequest extends Request {
 interface DatabaseSchema {
   settings: SiteSettings;
   stats: SiteStats;
+  community_impact_stats?: CommunityImpactStat[];
   events: Event[];
   announcements: Announcement[];
   team: TeamMember[];
@@ -224,9 +227,40 @@ function loadDatabase(): DatabaseSchema {
           ) === idx
       );
 
+      let communityStats = Array.isArray(parsed.community_impact_stats) && parsed.community_impact_stats.length > 0
+        ? parsed.community_impact_stats
+        : null;
+
+      if (!communityStats) {
+        communityStats = INITIAL_COMMUNITY_IMPACT_STATS.map((stat) => {
+          // If legacy stats had specific values, preserve them
+          if (stat.id === 'stat-students-reached' && parsed.stats?.students_reached) {
+            return { ...stat, value: String(parsed.stats.students_reached) };
+          }
+          if (stat.id === 'stat-events-sprints' && parsed.stats?.events_conducted) {
+            return { ...stat, value: String(parsed.stats.events_conducted) };
+          }
+          if (stat.id === 'stat-live-projects' && parsed.stats?.projects_completed) {
+            return { ...stat, value: String(parsed.stats.projects_completed) };
+          }
+          if (stat.id === 'stat-technical-labs' && parsed.stats?.workshops_held) {
+            return { ...stat, value: String(parsed.stats.workshops_held) };
+          }
+          if (stat.id === 'stat-hackathon-wins' && parsed.stats?.hackathon_wins) {
+            return { ...stat, value: String(parsed.stats.hackathon_wins) };
+          }
+          if (stat.id === 'stat-core-members' && parsed.stats?.active_members) {
+            return { ...stat, value: String(parsed.stats.active_members) };
+          }
+          return stat;
+        });
+        needsSave = true;
+      }
+
       const loaded: DatabaseSchema = {
         settings: parsed.settings || INITIAL_SETTINGS,
         stats: parsed.stats || INITIAL_STATS,
+        community_impact_stats: communityStats,
         events: parsed.events || INITIAL_EVENTS,
         announcements: parsed.announcements || INITIAL_ANNOUNCEMENTS,
         team: parsed.team || INITIAL_TEAM,
@@ -258,6 +292,7 @@ function loadDatabase(): DatabaseSchema {
   const initialDb: DatabaseSchema = {
     settings: INITIAL_SETTINGS,
     stats: INITIAL_STATS,
+    community_impact_stats: INITIAL_COMMUNITY_IMPACT_STATS,
     events: INITIAL_EVENTS,
     announcements: INITIAL_ANNOUNCEMENTS,
     team: INITIAL_TEAM,
@@ -468,7 +503,22 @@ async function startServer() {
 
   // Stats
   app.get('/api/stats', (req, res) => {
-    res.json(db.stats);
+    const activeCommunityStats = (db.community_impact_stats || INITIAL_COMMUNITY_IMPACT_STATS)
+      .filter((s) => s.active !== false)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    res.json({
+      ...db.stats,
+      community_impact_stats: activeCommunityStats,
+    });
+  });
+
+  // Public Community Impact Statistics
+  app.get(['/api/public/community-impact', '/api/community-impact'], (req, res) => {
+    const activeStats = (db.community_impact_stats || INITIAL_COMMUNITY_IMPACT_STATS)
+      .filter((s) => s.active !== false)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    res.json(activeStats);
   });
 
   // Global Search
@@ -1837,6 +1887,168 @@ async function startServer() {
   });
 
   // Admin Stats & Settings Update
+  adminRouter.get('/community-impact', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
+    const list = [...(db.community_impact_stats || INITIAL_COMMUNITY_IMPACT_STATS)].sort(
+      (a, b) => (a.order || 0) - (b.order || 0)
+    );
+    res.json(list);
+  });
+
+  adminRouter.put('/community-impact/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req: AuthenticatedRequest, res) => {
+    const id = req.params.id;
+    const { value, label, icon, active, order } = req.body;
+    if (!db.community_impact_stats) {
+      db.community_impact_stats = [...INITIAL_COMMUNITY_IMPACT_STATS];
+    }
+    const idx = db.community_impact_stats.findIndex((s) => s.id === id);
+    if (idx === -1) {
+      res.status(404).json({ error: 'Community impact statistic not found' });
+      return;
+    }
+
+    const cleanValue = typeof value === 'string' ? value.replace(/<[^>]*>?/gm, '').trim() : String(value || '').trim();
+    const cleanLabel = typeof label === 'string' ? label.replace(/<[^>]*>?/gm, '').trim() : String(label || '').trim();
+    const cleanIcon = typeof icon === 'string' ? icon.replace(/[^a-zA-Z0-9_-]/g, '').trim() : 'Users';
+
+    if (!cleanValue) {
+      res.status(400).json({ error: 'Statistic value is required.' });
+      return;
+    }
+    if (!cleanLabel) {
+      res.status(400).json({ error: 'Statistic label is required.' });
+      return;
+    }
+
+    db.community_impact_stats[idx] = {
+      ...db.community_impact_stats[idx],
+      value: cleanValue,
+      label: cleanLabel,
+      icon: cleanIcon || 'Users',
+      active: typeof active === 'boolean' ? active : true,
+      order: typeof order === 'number' ? order : db.community_impact_stats[idx].order,
+      updated_at: new Date().toISOString(),
+      updated_by: req.adminUser?.name || req.adminUser?.email || 'Administrator',
+    };
+
+    saveDatabase(db);
+
+    logAdminAction(
+      'Update Community Impact Stat',
+      'CommunityImpactStat',
+      id,
+      `Updated stat ${cleanLabel}: ${cleanValue} (active: ${active !== false})`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json(db.community_impact_stats[idx]);
+  });
+
+  adminRouter.put('/community-impact', requireRole('SUPER_ADMIN', 'ADMIN'), (req: AuthenticatedRequest, res) => {
+    const statsArray = req.body;
+    if (!Array.isArray(statsArray)) {
+      res.status(400).json({ error: 'Expected an array of community impact stats.' });
+      return;
+    }
+
+    const sanitized = statsArray.map((item, idx) => {
+      const cleanValue = typeof item.value === 'string' ? item.value.replace(/<[^>]*>?/gm, '').trim() : String(item.value || '').trim();
+      const cleanLabel = typeof item.label === 'string' ? item.label.replace(/<[^>]*>?/gm, '').trim() : String(item.label || '').trim();
+      const cleanIcon = typeof item.icon === 'string' ? item.icon.replace(/[^a-zA-Z0-9_-]/g, '').trim() : 'Users';
+      return {
+        id: item.id || `stat-${Date.now()}-${idx}`,
+        value: cleanValue || '0',
+        label: cleanLabel || 'STATISTIC',
+        icon: cleanIcon || 'Users',
+        active: typeof item.active === 'boolean' ? item.active : true,
+        order: typeof item.order === 'number' ? item.order : idx + 1,
+        updated_at: new Date().toISOString(),
+        updated_by: req.adminUser?.name || req.adminUser?.email || 'Administrator',
+      };
+    });
+
+    db.community_impact_stats = sanitized;
+    saveDatabase(db);
+
+    logAdminAction(
+      'Update All Community Impact Stats',
+      'CommunityImpactStat',
+      'all',
+      `Saved ${sanitized.length} community impact stats`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json(db.community_impact_stats);
+  });
+
+  adminRouter.post('/community-impact', requireRole('SUPER_ADMIN', 'ADMIN'), (req: AuthenticatedRequest, res) => {
+    const { value, label, icon, active, order } = req.body;
+    if (!db.community_impact_stats) {
+      db.community_impact_stats = [...INITIAL_COMMUNITY_IMPACT_STATS];
+    }
+
+    const cleanValue = typeof value === 'string' ? value.replace(/<[^>]*>?/gm, '').trim() : String(value || '').trim();
+    const cleanLabel = typeof label === 'string' ? label.replace(/<[^>]*>?/gm, '').trim() : String(label || '').trim();
+    const cleanIcon = typeof icon === 'string' ? icon.replace(/[^a-zA-Z0-9_-]/g, '').trim() : 'Users';
+
+    if (!cleanValue || !cleanLabel) {
+      res.status(400).json({ error: 'Value and Label are required.' });
+      return;
+    }
+
+    const newStat: CommunityImpactStat = {
+      id: `stat-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      value: cleanValue,
+      label: cleanLabel,
+      icon: cleanIcon || 'Users',
+      active: typeof active === 'boolean' ? active : true,
+      order: typeof order === 'number' ? order : db.community_impact_stats.length + 1,
+      updated_at: new Date().toISOString(),
+      updated_by: req.adminUser?.name || req.adminUser?.email || 'Administrator',
+    };
+
+    db.community_impact_stats.push(newStat);
+    saveDatabase(db);
+
+    logAdminAction(
+      'Create Community Impact Stat',
+      'CommunityImpactStat',
+      newStat.id,
+      `Created stat ${newStat.label} (${newStat.value})`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.status(201).json(newStat);
+  });
+
+  adminRouter.delete('/community-impact/:id', requireRole('SUPER_ADMIN', 'ADMIN'), (req: AuthenticatedRequest, res) => {
+    const id = req.params.id;
+    if (!db.community_impact_stats) {
+      db.community_impact_stats = [...INITIAL_COMMUNITY_IMPACT_STATS];
+    }
+    const idx = db.community_impact_stats.findIndex((s) => s.id === id);
+    if (idx === -1) {
+      res.status(404).json({ error: 'Statistic not found.' });
+      return;
+    }
+    const deleted = db.community_impact_stats.splice(idx, 1)[0];
+    saveDatabase(db);
+
+    logAdminAction(
+      'Delete Community Impact Stat',
+      'CommunityImpactStat',
+      id,
+      `Deleted stat ${deleted.label}`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({ success: true, message: 'Statistic removed.' });
+  });
+
+  // Admin Legacy Stats & Settings Update
   adminRouter.put('/stats', requireRole('SUPER_ADMIN', 'ADMIN'), (req, res) => {
     db.stats = { ...db.stats, ...req.body };
     saveDatabase(db);

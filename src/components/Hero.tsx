@@ -34,16 +34,20 @@ export const Hero: React.FC<HeroProps> = ({ onNavigate, settings }) => {
       <div className="max-w-5xl mx-auto w-full relative z-10 text-center flex flex-col items-center">
         
         {/* Institutional Pill Badge */}
-        <div className="inline-flex items-center gap-2 border border-[#00E5FF]/20 bg-[#00E5FF]/5 rounded-full py-1.5 px-5 text-[10px] sm:text-[11px] uppercase tracking-[0.3em] text-[#00E5FF] font-bold mb-6">
-          <span className="flex h-1.5 w-1.5 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00E5FF] opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#00E5FF]"></span>
-          </span>
-          <span>{settings?.department_name || 'DEPT OF CSE (AIML) & AI'}</span>
-          <span className="text-[#4B5563]">•</span>
-          <span className="text-[#9CA3AF] hidden sm:inline truncate max-w-sm">
-            {settings?.college_name || 'DR. K. V. SUBBA REDDY INSTITUTE OF TECHNOLOGY'}
-          </span>
+        <div className="inline-flex items-center justify-center border border-[#00E5FF]/20 bg-[#00E5FF]/5 rounded-2xl sm:rounded-full py-2 px-4 sm:px-6 mb-6 max-w-4xl mx-auto text-center shadow-[0_0_20px_rgba(0,229,255,0.05)]">
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1.5 text-[10px] sm:text-[11px] md:text-[11.5px] uppercase tracking-[0.14em] sm:tracking-[0.18em] font-bold leading-relaxed">
+            <span className="inline-flex items-center gap-2 text-[#00E5FF]">
+              <span className="flex h-1.5 w-1.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00E5FF] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#00E5FF]"></span>
+              </span>
+              <span>DEPARTMENT OF AIML &amp; AI</span>
+            </span>
+            <span className="text-[#00E5FF]/40 hidden sm:inline">•</span>
+            <span className="text-[#9CA3AF]">
+              DR. K. V. SUBBA REDDY INSTITUTE OF TECHNOLOGY
+            </span>
+          </div>
         </div>
 
         {/* Hero Logo Emblem */}

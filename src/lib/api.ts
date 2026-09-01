@@ -10,6 +10,7 @@ import {
   ContactMessage,
   SiteStats,
   SiteSettings,
+  CommunityImpactStat,
   Certificate,
   NewsletterSubscriber,
   NewsletterBroadcast,
@@ -53,9 +54,16 @@ export const api = {
     return res.json();
   },
 
+  // Public Stats
   getStats: async (): Promise<SiteStats> => {
     const res = await fetch('/api/stats');
     if (!res.ok) throw new Error('Failed to load stats');
+    return res.json();
+  },
+
+  getCommunityImpactStats: async (): Promise<CommunityImpactStat[]> => {
+    const res = await fetch('/api/public/community-impact');
+    if (!res.ok) throw new Error('Failed to load community impact statistics');
     return res.json();
   },
 
@@ -651,6 +659,72 @@ export const api = {
       body: JSON.stringify(stats),
     });
     if (!res.ok) throw new Error('Failed to update stats');
+    return res.json();
+  },
+
+  adminGetCommunityImpactStats: async (): Promise<CommunityImpactStat[]> => {
+    const res = await fetch('/api/admin/community-impact', {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to load community impact statistics');
+    return res.json();
+  },
+
+  adminUpdateCommunityImpactStat: async (
+    id: string,
+    data: Partial<CommunityImpactStat>
+  ): Promise<CommunityImpactStat> => {
+    const res = await fetch(`/api/admin/community-impact/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to update community impact statistic');
+    }
+    return res.json();
+  },
+
+  adminSaveAllCommunityImpactStats: async (
+    stats: CommunityImpactStat[]
+  ): Promise<CommunityImpactStat[]> => {
+    const res = await fetch('/api/admin/community-impact', {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(stats),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to save community impact statistics');
+    }
+    return res.json();
+  },
+
+  adminCreateCommunityImpactStat: async (
+    data: Partial<CommunityImpactStat>
+  ): Promise<CommunityImpactStat> => {
+    const res = await fetch('/api/admin/community-impact', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to create community impact statistic');
+    }
+    return res.json();
+  },
+
+  adminDeleteCommunityImpactStat: async (id: string): Promise<{ success: boolean; message?: string }> => {
+    const res = await fetch(`/api/admin/community-impact/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to delete community impact statistic');
+    }
     return res.json();
   },
 

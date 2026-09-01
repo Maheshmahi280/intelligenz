@@ -243,6 +243,17 @@ export interface ContactMessage {
   created_at: string;
 }
 
+export interface CommunityImpactStat {
+  id: string;
+  value: string;
+  label: string;
+  icon: string;
+  active: boolean;
+  order: number;
+  updated_at?: string;
+  updated_by?: string;
+}
+
 export interface SiteStats {
   students_reached?: string | number;
   students_impacted?: string | number;
@@ -252,6 +263,7 @@ export interface SiteStats {
   active_members?: string | number;
   hackathon_wins?: string | number;
   awards_won?: string | number;
+  community_impact_stats?: CommunityImpactStat[];
   [key: string]: any;
 }
 

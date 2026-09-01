@@ -7,6 +7,7 @@ import {
   GalleryImage,
   SiteStats,
   SiteSettings,
+  CommunityImpactStat,
 } from '../types';
 
 export const INITIAL_SETTINGS: SiteSettings = {
@@ -26,6 +27,69 @@ export const INITIAL_SETTINGS: SiteSettings = {
   is_recruitment_open: true,
 };
 
+export const INITIAL_COMMUNITY_IMPACT_STATS: CommunityImpactStat[] = [
+  {
+    id: 'stat-students-reached',
+    value: '650+',
+    label: 'STUDENTS REACHED',
+    icon: 'Users',
+    active: true,
+    order: 1,
+    updated_at: '2026-09-01T00:00:00Z',
+    updated_by: 'Super Admin',
+  },
+  {
+    id: 'stat-events-sprints',
+    value: '28+',
+    label: 'EVENTS & SPRINTS',
+    icon: 'Calendar',
+    active: true,
+    order: 2,
+    updated_at: '2026-09-01T00:00:00Z',
+    updated_by: 'Super Admin',
+  },
+  {
+    id: 'stat-live-projects',
+    value: '14+',
+    label: 'LIVE AI PROJECTS',
+    icon: 'Lightbulb',
+    active: true,
+    order: 3,
+    updated_at: '2026-09-01T00:00:00Z',
+    updated_by: 'Super Admin',
+  },
+  {
+    id: 'stat-technical-labs',
+    value: '18+',
+    label: 'TECHNICAL LABS',
+    icon: 'GraduationCap',
+    active: true,
+    order: 4,
+    updated_at: '2026-09-01T00:00:00Z',
+    updated_by: 'Super Admin',
+  },
+  {
+    id: 'stat-hackathon-wins',
+    value: '8+',
+    label: 'HACKATHON WINS',
+    icon: 'Award',
+    active: true,
+    order: 5,
+    updated_at: '2026-09-01T00:00:00Z',
+    updated_by: 'Super Admin',
+  },
+  {
+    id: 'stat-core-members',
+    value: '120+',
+    label: 'CORE MEMBERS',
+    icon: 'Flame',
+    active: true,
+    order: 6,
+    updated_at: '2026-09-01T00:00:00Z',
+    updated_by: 'Super Admin',
+  },
+];
+
 export const INITIAL_STATS: SiteStats = {
   students_reached: '650+',
   events_conducted: '28+',
@@ -33,6 +97,7 @@ export const INITIAL_STATS: SiteStats = {
   workshops_held: '18+',
   active_members: '120+',
   hackathon_wins: '8+',
+  community_impact_stats: INITIAL_COMMUNITY_IMPACT_STATS,
 };
 
 export const INITIAL_EVENTS: Event[] = [
