@@ -94,8 +94,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
             {event.title}
           </h1>
 
-          {/* Metadata quick grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs text-[#9CA3AF]">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 text-xs text-[#9CA3AF]">
             <div className="p-3 rounded-lg bg-[#0D1017] border border-[#1A1C23] flex items-center gap-2.5">
               <Calendar className="w-4 h-4 text-[#00E5FF] shrink-0" />
               <div>
@@ -117,11 +116,23 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({
             </div>
 
             <div className="p-3 rounded-lg bg-[#0D1017] border border-[#1A1C23] flex items-center gap-2.5">
+              <Users className="w-4 h-4 text-indigo-400 shrink-0" />
+              <div>
+                <div className="text-[10px] text-[#6B7280]">Format</div>
+                <div className="font-semibold text-white">
+                  {(event.participation_type || 'SOLO') === 'SOLO' && 'Solo (1 Student)'}
+                  {event.participation_type === 'DUO' && 'Duo (2 Members)'}
+                  {event.participation_type === 'TEAM' && `Team (${event.min_team_size || 2}–${event.max_team_size || 4} Members)`}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-[#0D1017] border border-[#1A1C23] flex items-center gap-2.5">
               <Users className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
-                <div className="text-[10px] text-[#6B7280]">Participants</div>
+                <div className="text-[10px] text-[#6B7280]">Registrations</div>
                 <div className="font-semibold text-white">
-                  {event.current_participants} / {event.maximum_participants} Registered
+                  {event.current_participants} / {event.maximum_participants || '∞'}
                 </div>
               </div>
             </div>

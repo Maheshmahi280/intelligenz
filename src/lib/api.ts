@@ -17,6 +17,9 @@ import {
   AttendanceRecord,
   LearningResource,
   AuditLog,
+  ParticipationType,
+  TeamMemberRegistration,
+  EventWinner,
 } from '../types';
 
 
@@ -87,9 +90,12 @@ export const api = {
     full_name: string;
     email: string;
     phone?: string;
+    college?: string;
     department: string;
     year: string;
     roll_number: string;
+    team_name?: string;
+    team_members?: TeamMemberRegistration[];
   }): Promise<{ success: boolean; message: string; registration: EventRegistration }> => {
     const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/register`, {
       method: 'POST',
@@ -99,6 +105,18 @@ export const api = {
     const result = await res.json();
     if (!res.ok) throw new Error(result.error || 'Registration failed');
     return result;
+  },
+
+  getEventRegistrations: async (eventId: string): Promise<EventRegistration[]> => {
+    const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/registrations`);
+    if (!res.ok) throw new Error('Failed to load event registrations');
+    return res.json();
+  },
+
+  getEventWinners: async (eventId: string): Promise<{ event_id: string; title: string; status: string; results?: string; winners: EventWinner[] }> => {
+    const res = await fetch(`/api/events/${encodeURIComponent(eventId)}/winners`);
+    if (!res.ok) throw new Error('Failed to load event winners');
+    return res.json();
   },
 
   getAnnouncements: async (params?: { category?: string; featured?: boolean }): Promise<Announcement[]> => {
@@ -429,6 +447,44 @@ export const api = {
     });
     if (!res.ok) throw new Error('Failed to delete event');
     return res.json();
+  },
+
+  adminGetEventRegistrations: async (eventId: string): Promise<EventRegistration[]> => {
+    const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/registrations`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to load event registrations');
+    return res.json();
+  },
+
+  adminUpdateEventWinners: async (
+    eventId: string,
+    data: {
+      first_registration_id?: string;
+      second_registration_id?: string;
+      third_registration_id?: string;
+      winners?: EventWinner[];
+      results?: string;
+    }
+  ): Promise<{ success: boolean; message: string; event: Event }> => {
+    const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/winners`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to update winners');
+    return result;
+  },
+
+  adminDeleteEventWinner: async (eventId: string, position: string) => {
+    const res = await fetch(`/api/admin/events/${encodeURIComponent(eventId)}/winners/${encodeURIComponent(position)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Failed to remove winner');
+    return result;
   },
 
   adminCreateAnnouncement: async (data: Partial<Announcement>) => {
@@ -1129,4 +1185,7 @@ export const api = {
     return result;
   },
 };
+
+export const adminApi = api;
+
 

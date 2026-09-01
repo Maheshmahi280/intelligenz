@@ -18,11 +18,25 @@ export type EventCategory =
   | 'Project Expo'
   | 'Guest Lecture';
 
+export type ParticipationType = 'SOLO' | 'DUO' | 'TEAM';
+
+export interface TeamMemberRegistration {
+  full_name: string;
+  email: string;
+  roll_number: string;
+  department?: string;
+  year?: string;
+  phone?: string;
+}
+
 export interface EventWinner {
-  position: string;
+  position: '1st' | '2nd' | '3rd' | string;
+  registration_id?: string;
   name: string;
   team_name?: string;
   project_title?: string;
+  members?: string[];
+  members_detail?: TeamMemberRegistration[];
 }
 
 export interface Event {
@@ -48,6 +62,9 @@ export interface Event {
   current_participants: number;
   status: EventStatus;
   featured: boolean;
+  participation_type?: ParticipationType;
+  min_team_size?: number;
+  max_team_size?: number;
   highlights?: string[];
   photos?: string[];
   results?: string;
@@ -120,6 +137,8 @@ export interface EventRegistration {
   id: string;
   event_id: string;
   event_title?: string;
+  participation_type?: ParticipationType;
+  team_name?: string;
   full_name: string;
   participant_name?: string;
   email: string;
@@ -128,7 +147,9 @@ export interface EventRegistration {
   department: string;
   year: string;
   roll_number: string;
-  status: 'Confirmed' | 'Waitlisted' | 'Cancelled';
+  team_members?: TeamMemberRegistration[];
+  team_size?: number;
+  status: 'Confirmed' | 'Waitlisted' | 'Cancelled' | 'Attended';
   registered_at?: string;
   created_at: string;
 }

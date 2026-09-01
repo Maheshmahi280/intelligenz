@@ -40,6 +40,9 @@ import {
   AttendanceRecord,
   LearningResource,
   AuditLog,
+  ParticipationType,
+  TeamMemberRegistration,
+  EventWinner,
 } from './src/types';
 
 export interface AdminUserRecord {
@@ -257,11 +260,21 @@ function loadDatabase(): DatabaseSchema {
         needsSave = true;
       }
 
+      const normalizedEvents: Event[] = (parsed.events || INITIAL_EVENTS).map((evt: Event) => {
+        const pType = evt.participation_type || (evt.category === 'Hackathon' ? 'TEAM' : 'SOLO');
+        return {
+          ...evt,
+          participation_type: pType,
+          min_team_size: evt.min_team_size || (pType === 'SOLO' ? 1 : 2),
+          max_team_size: evt.max_team_size || (pType === 'SOLO' ? 1 : pType === 'DUO' ? 2 : 4),
+        };
+      });
+
       const loaded: DatabaseSchema = {
         settings: parsed.settings || INITIAL_SETTINGS,
         stats: parsed.stats || INITIAL_STATS,
         community_impact_stats: communityStats,
-        events: parsed.events || INITIAL_EVENTS,
+        events: normalizedEvents,
         announcements: parsed.announcements || INITIAL_ANNOUNCEMENTS,
         team: parsed.team || INITIAL_TEAM,
         projects: parsed.projects || INITIAL_PROJECTS,
@@ -589,8 +602,78 @@ async function startServer() {
     res.json(event);
   });
 
+  // Helper to check if any student (email or roll number) is already registered for this event
+  function checkEventParticipantDuplicate(
+    eventId: string,
+    email: string,
+    rollNumber: string
+  ): { isDuplicate: boolean; message?: string } {
+    const normEmail = (email || '').trim().toLowerCase();
+    const normRoll = (rollNumber || '').trim().toUpperCase();
+    if (!normEmail && !normRoll) return { isDuplicate: false };
+
+    const eventRegs = db.registrations.filter((r) => r.event_id === eventId && r.status !== 'Cancelled');
+    for (const reg of eventRegs) {
+      // Check leader / individual
+      if (
+        (normEmail && reg.email && reg.email.toLowerCase() === normEmail) ||
+        (normRoll && reg.roll_number && reg.roll_number.toUpperCase() === normRoll)
+      ) {
+        return {
+          isDuplicate: true,
+          message: `Student with email '${email}' or roll number '${rollNumber}' is already registered for this event${reg.team_name ? ` (Team: ${reg.team_name})` : ''}.`,
+        };
+      }
+
+      // Check team members
+      if (reg.team_members && Array.isArray(reg.team_members)) {
+        for (const m of reg.team_members) {
+          if (
+            (normEmail && m.email && m.email.toLowerCase() === normEmail) ||
+            (normRoll && m.roll_number && m.roll_number.toUpperCase() === normRoll)
+          ) {
+            return {
+              isDuplicate: true,
+              message: `Student with email '${email}' or roll number '${rollNumber}' (${m.full_name}) is already registered as a team member in '${reg.team_name || reg.full_name}'.`,
+            };
+          }
+        }
+      }
+    }
+    return { isDuplicate: false };
+  }
+
+  // Event Registrations candidates for winners selection
+  app.get('/api/events/:id/registrations', (req, res) => {
+    const eventId = req.params.id;
+    const event = db.events.find((e) => e.id === eventId || e.slug === eventId);
+    if (!event) {
+      res.status(404).json({ error: 'Event not found' });
+      return;
+    }
+    const regs = db.registrations.filter((r) => r.event_id === event.id && r.status !== 'Cancelled');
+    res.json(regs);
+  });
+
+  // Event Winners (Public)
+  app.get('/api/events/:id/winners', (req, res) => {
+    const eventId = req.params.id;
+    const event = db.events.find((e) => e.id === eventId || e.slug === eventId);
+    if (!event) {
+      res.status(404).json({ error: 'Event not found' });
+      return;
+    }
+    res.json({
+      event_id: event.id,
+      title: event.title,
+      status: event.status,
+      results: event.results || '',
+      winners: event.winners || [],
+    });
+  });
+
   // Event Registration (Public)
-  app.post('/api/events/:id/register', rateLimiter(30, 60000), (req, res) => {
+  app.post('/api/events/:id/register', rateLimiter(45, 60000), (req, res) => {
     const eventId = req.params.id;
     const event = db.events.find((e) => e.id === eventId || e.slug === eventId);
     if (!event) {
@@ -603,53 +686,207 @@ async function startServer() {
       return;
     }
 
-    const { full_name, participant_name, name, email, phone, department, year, roll_number, college } = req.body;
-    const studentName = (full_name || participant_name || name || '').trim();
-    const studentEmail = (email || '').trim().toLowerCase();
-    const studentRoll = (roll_number || '').trim().toUpperCase();
-    const studentDept = (department || '').trim();
-    const studentYear = (year || '').trim();
+    const participationType: ParticipationType = event.participation_type || 'SOLO';
+    const minTeamSize = event.min_team_size || (participationType === 'SOLO' ? 1 : 2);
+    const maxTeamSize = event.max_team_size || (participationType === 'SOLO' ? 1 : participationType === 'DUO' ? 2 : 4);
 
-    if (!studentName || !studentEmail || !studentRoll || !studentDept || !studentYear) {
-      res.status(400).json({ error: 'Please provide all required registration fields (Name, Email, Roll Number, Department, and Year).' });
+    const {
+      full_name,
+      participant_name,
+      name,
+      email,
+      phone,
+      department,
+      year,
+      roll_number,
+      college,
+      team_name,
+      team_members,
+    } = req.body;
+
+    const leaderName = (full_name || participant_name || name || '').trim();
+    const leaderEmail = (email || '').trim().toLowerCase();
+    const leaderRoll = (roll_number || '').trim().toUpperCase();
+    const leaderDept = (department || 'CSE (AIML)').trim();
+    const leaderYear = (year || '3rd Year').trim();
+    const leaderPhone = (phone || '').trim();
+    const teamName = (team_name || '').trim();
+
+    if (!leaderName || !leaderEmail || !leaderRoll) {
+      res.status(400).json({
+        error: 'Please provide all required fields for the participant/leader (Full Name, College Email, Roll Number).',
+      });
       return;
     }
 
-    // Check duplicate
-    const existing = db.registrations.find(
-      (r) =>
-        r.event_id === event.id &&
-        (r.email.toLowerCase() === studentEmail ||
-          r.roll_number.toUpperCase() === studentRoll)
-    );
-    if (existing) {
-      res.status(400).json({ error: 'You have already registered for this event with this email or roll number.' });
-      return;
+    let finalMembers: TeamMemberRegistration[] = [];
+    let totalParticipants = 1;
+
+    if (participationType === 'SOLO') {
+      const dupCheck = checkEventParticipantDuplicate(event.id, leaderEmail, leaderRoll);
+      if (dupCheck.isDuplicate) {
+        res.status(400).json({ error: dupCheck.message || 'You have already registered for this event.' });
+        return;
+      }
+      totalParticipants = 1;
+    } else if (participationType === 'DUO') {
+      if (!teamName) {
+        res.status(400).json({ error: 'Please provide a Duo / Team Name for this 2-person event.' });
+        return;
+      }
+
+      const member2 = Array.isArray(team_members) && team_members.length > 0 ? team_members[0] : req.body.member2;
+      if (!member2 || !member2.full_name || !member2.email || !member2.roll_number) {
+        res.status(400).json({
+          error: 'DUO events require complete details for both Participant 1 (Leader) and Participant 2 (Full Name, College Email, Roll Number).',
+        });
+        return;
+      }
+
+      const m2Name = String(member2.full_name).trim();
+      const m2Email = String(member2.email).trim().toLowerCase();
+      const m2Roll = String(member2.roll_number).trim().toUpperCase();
+      const m2Dept = String(member2.department || leaderDept).trim();
+      const m2Year = String(member2.year || leaderYear).trim();
+      const m2Phone = String(member2.phone || '').trim();
+
+      if (!m2Name || !m2Email || !m2Roll) {
+        res.status(400).json({ error: 'Please enter Participant 2 Full Name, College Email, and Roll Number.' });
+        return;
+      }
+
+      if (leaderEmail === m2Email || leaderRoll === m2Roll) {
+        res.status(400).json({ error: 'Participant 1 and Participant 2 must have distinct email addresses and roll numbers.' });
+        return;
+      }
+
+      const leaderDup = checkEventParticipantDuplicate(event.id, leaderEmail, leaderRoll);
+      if (leaderDup.isDuplicate) {
+        res.status(400).json({ error: `Participant 1: ${leaderDup.message}` });
+        return;
+      }
+
+      const m2Dup = checkEventParticipantDuplicate(event.id, m2Email, m2Roll);
+      if (m2Dup.isDuplicate) {
+        res.status(400).json({ error: `Participant 2: ${m2Dup.message}` });
+        return;
+      }
+
+      finalMembers = [
+        {
+          full_name: m2Name,
+          email: m2Email,
+          roll_number: m2Roll,
+          department: m2Dept,
+          year: m2Year,
+          phone: m2Phone,
+        },
+      ];
+      totalParticipants = 2;
+    } else if (participationType === 'TEAM') {
+      if (!teamName) {
+        res.status(400).json({ error: 'Please provide a registered Team Name.' });
+        return;
+      }
+
+      const rawMembers: any[] = Array.isArray(team_members) ? team_members : [];
+      const totalTeamSize = 1 + rawMembers.length;
+
+      if (totalTeamSize < minTeamSize || totalTeamSize > maxTeamSize) {
+        res.status(400).json({
+          error: `This event requires teams of between ${minTeamSize} and ${maxTeamSize} members. Your submission contains ${totalTeamSize} members (1 Leader + ${rawMembers.length} Members).`,
+        });
+        return;
+      }
+
+      const seenEmails = new Set<string>([leaderEmail]);
+      const seenRolls = new Set<string>([leaderRoll]);
+
+      for (let i = 0; i < rawMembers.length; i++) {
+        const m = rawMembers[i];
+        const mName = (m.full_name || m.name || '').trim();
+        const mEmail = (m.email || '').trim().toLowerCase();
+        const mRoll = (m.roll_number || '').trim().toUpperCase();
+
+        if (!mName || !mEmail || !mRoll) {
+          res.status(400).json({
+            error: `Team Member #${i + 2} is missing required information (Full Name, College Email, and Roll Number are required).`,
+          });
+          return;
+        }
+
+        if (seenEmails.has(mEmail)) {
+          res.status(400).json({ error: `Duplicate email address '${mEmail}' found within your team submission.` });
+          return;
+        }
+        if (seenRolls.has(mRoll)) {
+          res.status(400).json({ error: `Duplicate roll number '${mRoll}' found within your team submission.` });
+          return;
+        }
+
+        seenEmails.add(mEmail);
+        seenRolls.add(mRoll);
+
+        finalMembers.push({
+          full_name: mName,
+          email: mEmail,
+          roll_number: mRoll,
+          department: (m.department || leaderDept).trim(),
+          year: (m.year || leaderYear).trim(),
+          phone: (m.phone || '').trim(),
+        });
+      }
+
+      const leaderDup = checkEventParticipantDuplicate(event.id, leaderEmail, leaderRoll);
+      if (leaderDup.isDuplicate) {
+        res.status(400).json({ error: `Team Leader (${leaderName}): ${leaderDup.message}` });
+        return;
+      }
+
+      for (const m of finalMembers) {
+        const mDup = checkEventParticipantDuplicate(event.id, m.email, m.roll_number);
+        if (mDup.isDuplicate) {
+          res.status(400).json({ error: `Team Member ${m.full_name}: ${mDup.message}` });
+          return;
+        }
+      }
+
+      totalParticipants = totalTeamSize;
     }
+
+    const isFull = event.current_participants + totalParticipants > event.maximum_participants;
+    const regStatus = isFull ? 'Waitlisted' : 'Confirmed';
 
     const newReg: EventRegistration = {
       id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
       event_id: event.id,
       event_title: event.title,
-      full_name: studentName,
-      participant_name: studentName,
-      email: studentEmail,
-      phone: (phone || '').trim(),
-      department: studentDept,
-      year: studentYear,
-      roll_number: studentRoll,
-      status: event.current_participants < event.maximum_participants ? 'Confirmed' : 'Waitlisted',
+      participation_type: participationType,
+      team_name: participationType !== 'SOLO' ? teamName : undefined,
+      full_name: leaderName,
+      participant_name: leaderName,
+      email: leaderEmail,
+      phone: leaderPhone,
+      college: college || 'DR. K. V. SUBBA REDDY INSTITUTE OF TECHNOLOGY',
+      department: leaderDept,
+      year: leaderYear,
+      roll_number: leaderRoll,
+      team_members: finalMembers.length > 0 ? finalMembers : undefined,
+      team_size: totalParticipants,
+      status: regStatus,
       registered_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     };
 
     db.registrations.unshift(newReg);
-    event.current_participants += 1;
+    event.current_participants = (event.current_participants || 0) + totalParticipants;
     saveDatabase(db);
 
     res.status(201).json({
       success: true,
-      message: `Registration successful! Status: ${newReg.status}`,
+      message: `Registration successful! ${
+        participationType !== 'SOLO' ? `Team '${teamName}' registered` : `Registered`
+      } with status: ${regStatus}.`,
       registration: newReg,
     });
   });
@@ -1601,36 +1838,216 @@ async function startServer() {
   });
 
   // Admin Events CRUD (SUPER_ADMIN, ADMIN, EDITOR)
-  adminRouter.post('/events', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
+  adminRouter.post('/events', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req: AuthenticatedRequest, res) => {
     const body = req.body;
     const slug = body.slug || body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    
+    let pType: ParticipationType = body.participation_type || 'SOLO';
+    if (!['SOLO', 'DUO', 'TEAM'].includes(pType)) {
+      pType = 'SOLO';
+    }
+
+    let minTeam = 1;
+    let maxTeam = 1;
+    if (pType === 'DUO') {
+      minTeam = 2;
+      maxTeam = 2;
+    } else if (pType === 'TEAM') {
+      minTeam = Math.max(2, Number(body.min_team_size) || 2);
+      maxTeam = Math.max(minTeam, Number(body.max_team_size) || 4);
+    }
+
     const newEvent: Event = {
       ...body,
       id: `evt-${Date.now()}`,
       slug,
+      participation_type: pType,
+      min_team_size: minTeam,
+      max_team_size: maxTeam,
       current_participants: body.current_participants || 0,
       maximum_participants: Number(body.maximum_participants) || 100,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+
     db.events.unshift(newEvent);
     saveDatabase(db);
+
+    logAdminAction(
+      'Event Created',
+      'Event',
+      newEvent.id,
+      `Created event "${newEvent.title}" (${pType} participation)`,
+      req.adminUser?.email,
+      req
+    );
+
     res.status(201).json(newEvent);
   });
 
-  adminRouter.put('/events/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
+  adminRouter.put('/events/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req: AuthenticatedRequest, res) => {
     const index = db.events.findIndex((e) => e.id === req.params.id);
     if (index === -1) {
       res.status(404).json({ error: 'Event not found' });
       return;
     }
+
+    const body = req.body;
+    let pType: ParticipationType = body.participation_type || db.events[index].participation_type || 'SOLO';
+    if (!['SOLO', 'DUO', 'TEAM'].includes(pType)) {
+      pType = 'SOLO';
+    }
+
+    let minTeam = 1;
+    let maxTeam = 1;
+    if (pType === 'DUO') {
+      minTeam = 2;
+      maxTeam = 2;
+    } else if (pType === 'TEAM') {
+      minTeam = Math.max(2, Number(body.min_team_size ?? db.events[index].min_team_size) || 2);
+      maxTeam = Math.max(minTeam, Number(body.max_team_size ?? db.events[index].max_team_size) || 4);
+    }
+
     db.events[index] = {
       ...db.events[index],
-      ...req.body,
+      ...body,
+      participation_type: pType,
+      min_team_size: minTeam,
+      max_team_size: maxTeam,
       updated_at: new Date().toISOString(),
     };
+
     saveDatabase(db);
+
+    logAdminAction(
+      'Event Updated',
+      'Event',
+      db.events[index].id,
+      `Updated event "${db.events[index].title}" (Status: ${db.events[index].status}, Type: ${pType})`,
+      req.adminUser?.email,
+      req
+    );
+
     res.json(db.events[index]);
+  });
+
+  // Admin Get Event Registrations for Winner Selection
+  adminRouter.get('/events/:id/registrations', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
+    const event = db.events.find((e) => e.id === req.params.id);
+    if (!event) {
+      res.status(404).json({ error: 'Event not found' });
+      return;
+    }
+    const regs = db.registrations.filter((r) => r.event_id === event.id && r.status !== 'Cancelled');
+    res.json(regs);
+  });
+
+  // Admin Manage Event Winners (SUPER_ADMIN, ADMIN, EDITOR)
+  adminRouter.put('/events/:id/winners', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req: AuthenticatedRequest, res) => {
+    const event = db.events.find((e) => e.id === req.params.id);
+    if (!event) {
+      res.status(404).json({ error: 'Event not found' });
+      return;
+    }
+
+    const { winners, first_registration_id, second_registration_id, third_registration_id, results } = req.body;
+
+    let finalWinners: EventWinner[] = [];
+
+    if (Array.isArray(winners)) {
+      // If direct array provided
+      finalWinners = winners.filter((w) => w && w.name);
+    } else {
+      // If mapped by position registration IDs
+      const positions = [
+        { pos: '1st Place', id: first_registration_id },
+        { pos: '2nd Place', id: second_registration_id },
+        { pos: '3rd Place', id: third_registration_id },
+      ];
+
+      const selectedIds = positions.map((p) => p.id).filter(Boolean) as string[];
+      // Validate uniqueness
+      const uniqueIds = new Set(selectedIds);
+      if (uniqueIds.size !== selectedIds.length) {
+        res.status(400).json({ error: 'Cannot assign the same registration/team to multiple winner positions.' });
+        return;
+      }
+
+      for (const p of positions) {
+        if (!p.id) continue;
+        const reg = db.registrations.find((r) => r.id === p.id && r.event_id === event.id);
+        if (!reg) {
+          res.status(400).json({ error: `Selected winner registration '${p.id}' does not belong to this event.` });
+          return;
+        }
+
+        const memberNames = reg.team_members && reg.team_members.length > 0
+          ? [reg.full_name, ...reg.team_members.map((m) => m.full_name)]
+          : [reg.full_name];
+
+        finalWinners.push({
+          position: p.pos,
+          registration_id: reg.id,
+          name: reg.full_name,
+          team_name: reg.team_name,
+          members: memberNames,
+          members_detail: reg.team_members,
+        });
+      }
+    }
+
+    event.winners = finalWinners;
+    if (typeof results === 'string') {
+      event.results = results;
+    }
+    event.updated_at = new Date().toISOString();
+    saveDatabase(db);
+
+    logAdminAction(
+      'Winners Updated',
+      'Event',
+      event.id,
+      `Published ${finalWinners.length} podium winners for event "${event.title}"`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({
+      success: true,
+      message: `Winners successfully updated for "${event.title}".`,
+      event,
+    });
+  });
+
+  // Admin Remove a Specific Winner Position
+  adminRouter.delete('/events/:id/winners/:position', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req: AuthenticatedRequest, res) => {
+    const event = db.events.find((e) => e.id === req.params.id);
+    if (!event) {
+      res.status(404).json({ error: 'Event not found' });
+      return;
+    }
+
+    const pos = decodeURIComponent(req.params.position).toLowerCase();
+    if (pos === 'all') {
+      event.winners = [];
+    } else {
+      event.winners = (event.winners || []).filter(
+        (w) => !w.position.toLowerCase().includes(pos)
+      );
+    }
+    event.updated_at = new Date().toISOString();
+    saveDatabase(db);
+
+    logAdminAction(
+      'Winner Removed',
+      'Event',
+      event.id,
+      `Removed winner position (${req.params.position}) for event "${event.title}"`,
+      req.adminUser?.email,
+      req
+    );
+
+    res.json({ success: true, message: 'Winner position removed.', event });
   });
 
   adminRouter.delete('/events/:id', requireRole('SUPER_ADMIN', 'ADMIN', 'EDITOR'), (req, res) => {
@@ -1651,6 +2068,7 @@ async function startServer() {
       title: `${original.title} (Copy)`,
       slug: `${original.slug}-copy-${Date.now().toString().slice(-4)}`,
       current_participants: 0,
+      winners: [],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

@@ -81,10 +81,18 @@ export const EventCard: React.FC<EventCardProps> = ({
           {getStatusBadge(event.status)}
         </div>
 
-        {/* Date pill overlay at bottom of image */}
-        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#0A0B0E]/90 backdrop-blur-md border border-[#1A1C23] text-[10px] font-mono uppercase tracking-wider text-[#E0E2E6]">
-          <Calendar className="w-3 h-3 text-[#00E5FF]" />
-          <span>{event.date}</span>
+        {/* Date & Format pills overlay at bottom of image */}
+        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#0A0B0E]/90 backdrop-blur-md border border-[#1A1C23] text-[10px] font-mono uppercase tracking-wider text-[#E0E2E6]">
+            <Calendar className="w-3 h-3 text-[#00E5FF]" />
+            <span>{event.date}</span>
+          </div>
+
+          <div className="px-2 py-0.5 rounded bg-[#0A0B0E]/90 backdrop-blur-md border border-[#1A1C23] text-[10px] font-mono font-bold text-[#A78BFA]">
+            {(event.participation_type || 'SOLO') === 'SOLO' && 'SOLO'}
+            {event.participation_type === 'DUO' && 'DUO (2)'}
+            {event.participation_type === 'TEAM' && `TEAM (${event.min_team_size || 2}–${event.max_team_size || 4})`}
+          </div>
         </div>
       </div>
 

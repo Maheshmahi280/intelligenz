@@ -103,6 +103,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   // Current logged in admin profile
+  const [currentUser, setCurrentUser] = useState<any>(() => authStorage.getUser());
   const [currentAdminRole, setCurrentAdminRole] = useState<string>(() => {
     const cached = authStorage.getUser();
     return cached?.role || 'ADMIN';
@@ -182,6 +183,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       if (profileRes?.role) {
         setCurrentAdminRole(profileRes.role);
+        setCurrentUser(profileRes);
         authStorage.setUser(profileRes);
       }
     } catch (err: any) {
@@ -537,206 +539,226 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0B0E] text-[#D1D5DB] flex flex-col lg:flex-row">
-      {/* Sidebar (Desktop) */}
-      <aside className="hidden lg:flex lg:flex-col w-64 bg-[#0D1017] border-r border-[#1A1C23] shrink-0 sticky top-0 h-screen overflow-y-auto">
-        {/* Brand */}
-        <div className="p-5 border-b border-[#1A1C23]">
-          <div className="flex items-center gap-2.5">
-            <IntelligenzLogo size="sm" />
-            <div>
-              <div className="font-black text-white text-sm font-['Outfit'] tracking-wider">
-                INTELLIGENZ
-              </div>
-              <div className="text-[10px] text-[#6B7280] uppercase tracking-widest font-mono">
-                Admin Control Room
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Navigation links */}
-        <div className="p-3 space-y-1 flex-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                id={`admin-nav-${item.id}`}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all ${
-                  isActive
-                    ? 'bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20'
-                    : 'text-[#9CA3AF] hover:text-white hover:bg-[#121622]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#00E5FF]' : 'text-[#6B7280]'}`} />
-                  <span>{item.label}</span>
-                </div>
-                {item.count !== undefined && (
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      item.badgeColor || 'bg-[#1A1C23] text-[#9CA3AF]'
-                    }`}
-                  >
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="p-3 border-t border-[#1A1C23] space-y-1.5">
+    <div className="min-h-screen bg-[#0A0B0E] text-[#D1D5DB] flex flex-col font-['Plus_Jakarta_Sans']">
+      {/* ============================================================ */}
+      {/* 1. DEDICATED ADMIN HEADER (FULL-WIDTH TOP BAR)                */}
+      {/* ============================================================ */}
+      <header className="sticky top-0 z-40 bg-[#0D1017] border-b border-[#1A1C23] px-4 sm:px-6 py-3 flex items-center justify-between shadow-lg">
+        {/* LEFT: Complete branding group strictly aligned to TOP-LEFT */}
+        <div className="flex items-center gap-3.5">
+          {/* Mobile sidebar hamburger toggle */}
           <button
-            onClick={() => onNavigate('/')}
-            className="w-full px-3 py-2 rounded-xl text-xs text-[#9CA3AF] hover:text-white hover:bg-[#121622] flex items-center justify-between transition-all"
-          >
-            <span className="flex items-center gap-2">
-              <ExternalLink className="w-4 h-4 text-[#6B7280]" />
-              View Public Website
-            </span>
-          </button>
-          <button
-            onClick={() => setShowSignOutConfirm(true)}
-            className="w-full px-3 py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-2 transition-all font-semibold cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Sign Out</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Header */}
-      <div className="lg:hidden p-4 bg-[#0D1017] border-b border-[#1A1C23] flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-2">
-          <IntelligenzLogo size="xs" />
-          <span className="text-sm font-black text-white font-['Outfit']">Admin Portal</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleManualRefresh}
-            className="p-2 rounded-lg text-[#9CA3AF] hover:text-white hover:bg-[#1A1C23]"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-[#00E5FF]' : ''}`} />
-          </button>
-          <button
+            id="admin-mobile-sidebar-toggle"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 rounded-lg text-[#9CA3AF] hover:text-white hover:bg-[#1A1C23]"
+            className="lg:hidden p-2 rounded-xl text-[#9CA3AF] hover:text-white hover:bg-[#1A1C23] border border-transparent hover:border-[#1A1C23] transition-colors"
+            aria-label="Toggle admin sidebar menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-        </div>
-      </div>
 
-      {/* Mobile Menu Drawer */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden p-4 bg-[#0D1017] border-b border-[#1A1C23] space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setActiveTab(item.id);
-                  setMobileMenuOpen(false);
-                }}
-                className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between ${
-                  isActive
-                    ? 'bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20'
-                    : 'text-[#9CA3AF] hover:text-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className="w-4 h-4" />
-                  <span>{item.label}</span>
-                </div>
-                {item.count !== undefined && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#1A1C23] text-[#9CA3AF]">
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-
-          <div className="pt-3 border-t border-[#1A1C23] flex gap-2">
-            <button
-              onClick={() => onNavigate('/')}
-              className="flex-1 py-2 rounded-lg bg-[#1A1C23] text-xs text-white"
-            >
-              Public Site
-            </button>
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                setShowSignOutConfirm(true);
-              }}
-              className="flex-1 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold cursor-pointer"
-            >
-              Sign Out
-            </button>
+          {/* Intelligenz Club Brand Identity */}
+          <div className="flex items-center gap-3 text-left">
+            <IntelligenzLogo size="sm" interactive={false} />
+            <div className="flex flex-col justify-center">
+              <div className="flex items-center gap-2">
+                <span className="font-black text-white text-base sm:text-lg tracking-wider font-['Outfit'] leading-none">
+                  INTELLIGENZ
+                </span>
+                <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[9px] font-mono font-bold uppercase tracking-wider bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20">
+                  Admin Portal
+                </span>
+              </div>
+              <span className="text-[10px] sm:text-[11px] font-bold text-[#6B7280] uppercase tracking-widest font-['Outfit'] leading-tight mt-0.5">
+                INTELLIGENZ CLUB
+              </span>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-        {/* Top bar with quick sync */}
-        <div className="hidden lg:flex items-center justify-between pb-6 mb-6 border-b border-[#1A1C23]">
-          <div className="flex items-center gap-3">
-            <div className="text-xs text-[#6B7280]">
-              Logged in as <span className="text-white font-semibold">Administrator</span>
-            </div>
-            <span className="text-[#374151]">•</span>
-            <div className="text-xs text-[#6B7280]">
-              DR. K. V. SUBBA REDDY INSTITUTE OF TECHNOLOGY
+        {/* RIGHT: Admin Profile Badge, Sync Button, Public Site, Sign Out */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Admin Profile & Role Pill */}
+          <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-[#121622] border border-[#1A1C23]">
+            <div className={`w-2 h-2 rounded-full ${isSuperAdmin ? 'bg-amber-400 animate-pulse' : 'bg-[#00E5FF]'}`} />
+            <div className="text-left">
+              <div className="text-xs font-bold text-white leading-tight flex items-center gap-1.5">
+                <span>{currentUser?.name || currentUser?.username || 'Administrator'}</span>
+                <span
+                  className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
+                    isSuperAdmin
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      : 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/25'
+                  }`}
+                >
+                  {isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN'}
+                </span>
+              </div>
+              <div className="text-[9px] text-[#6B7280] font-mono tracking-tight">
+                DR. KVSRIT AI &amp; ML
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              id="admin-sync-btn"
-              onClick={handleManualRefresh}
-              disabled={refreshing}
-              className="px-3.5 py-1.5 rounded-lg bg-[#121622] hover:bg-[#1A1C23] text-xs text-[#9CA3AF] hover:text-white border border-[#1A1C23] flex items-center gap-1.5 transition-all disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#00E5FF]' : ''}`} />
-              <span>{refreshing ? 'Syncing...' : 'Sync Database'}</span>
-            </button>
-
-            <button
-              onClick={() => onNavigate('/')}
-              className="px-3.5 py-1.5 rounded-lg bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] text-xs font-semibold border border-[#00E5FF]/20 flex items-center gap-1.5 transition-all"
-            >
-              <span>Public Website</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Global Feedback notification */}
-        {feedback && (
-          <div
-            className={`p-4 rounded-xl text-xs font-semibold flex items-center gap-2.5 mb-6 animate-in slide-in-from-top duration-200 ${
-              feedback.type === 'success'
-                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                : 'bg-red-500/10 text-red-400 border border-red-500/20'
-            }`}
+          {/* Live Database Sync Button */}
+          <button
+            id="admin-sync-btn"
+            onClick={handleManualRefresh}
+            disabled={refreshing}
+            title="Sync live data from database"
+            className="px-3 py-1.5 rounded-xl bg-[#121622] hover:bg-[#1A1C23] text-xs text-[#9CA3AF] hover:text-white border border-[#1A1C23] flex items-center gap-1.5 transition-all disabled:opacity-50"
           >
-            {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-            )}
-            <span>{feedback.text}</span>
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-[#00E5FF]' : ''}`} />
+            <span className="hidden md:inline">{refreshing ? 'Syncing...' : 'Sync Data'}</span>
+          </button>
+
+          {/* View Public Website Link */}
+          <button
+            id="admin-view-public-site-btn"
+            onClick={() => onNavigate('/')}
+            title="Open Public Website"
+            className="px-3 py-1.5 rounded-xl bg-[#00E5FF]/10 hover:bg-[#00E5FF]/20 text-[#00E5FF] text-xs font-semibold border border-[#00E5FF]/20 flex items-center gap-1.5 transition-all"
+          >
+            <span className="hidden sm:inline">Public Site</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Sign Out Button */}
+          <button
+            id="admin-signout-btn"
+            onClick={() => setShowSignOutConfirm(true)}
+            title="Sign Out of Admin Portal"
+            className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Sign Out</span>
+          </button>
+        </div>
+      </header>
+
+      {/* ============================================================ */}
+      {/* 2. ADMIN DASHBOARD BODY (SIDEBAR + MAIN CONTENT AREA)        */}
+      {/* ============================================================ */}
+      <div className="flex flex-1 relative min-h-[calc(100vh-61px)]">
+        {/* Desktop Admin Sidebar */}
+        <aside className="hidden lg:flex lg:flex-col w-64 bg-[#0D1017] border-r border-[#1A1C23] shrink-0 sticky top-[61px] h-[calc(100vh-61px)] overflow-y-auto">
+          {/* Navigation Links */}
+          <div className="p-3 space-y-1 flex-1 overflow-y-auto">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  id={`admin-nav-${item.id}`}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between transition-all ${
+                    isActive
+                      ? 'bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20'
+                      : 'text-[#9CA3AF] hover:text-white hover:bg-[#121622]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-[#00E5FF]' : 'text-[#6B7280]'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.count !== undefined && (
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                        item.badgeColor || 'bg-[#1A1C23] text-[#9CA3AF]'
+                      }`}
+                    >
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sidebar Footer */}
+          <div className="p-3 border-t border-[#1A1C23] space-y-1">
+            <div className="px-3 py-1.5 text-[10px] uppercase font-mono tracking-wider text-[#4B5563]">
+              Intelligenz v2.4 Admin
+            </div>
+          </div>
+        </aside>
+
+        {/* Mobile Menu Overlay Drawer */}
+        {mobileMenuOpen && (
+          <div className="lg:hidden fixed inset-x-0 top-[61px] bottom-0 z-50 bg-[#0D1017]/98 backdrop-blur-xl border-b border-[#1A1C23] p-4 overflow-y-auto space-y-1">
+            <div className="pb-3 mb-2 border-b border-[#1A1C23] flex items-center justify-between">
+              <span className="text-xs font-mono uppercase text-[#6B7280] tracking-wider">Navigation Menu</span>
+              <span className="text-[10px] font-mono text-[#00E5FF]">{isSuperAdmin ? 'SUPER ADMIN' : 'ADMIN'}</span>
+            </div>
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full px-3 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-between ${
+                    isActive
+                      ? 'bg-[#00E5FF]/10 text-[#00E5FF] border border-[#00E5FF]/20'
+                      : 'text-[#9CA3AF] hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.count !== undefined && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#1A1C23] text-[#9CA3AF]">
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <div className="pt-3 border-t border-[#1A1C23] flex gap-2">
+              <button
+                onClick={() => onNavigate('/')}
+                className="flex-1 py-2 rounded-lg bg-[#1A1C23] text-xs text-white"
+              >
+                Public Site
+              </button>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  setShowSignOutConfirm(true);
+                }}
+                className="flex-1 py-2 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold cursor-pointer"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         )}
+
+        {/* Main Admin Content Area */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 bg-[#0A0B0E] overflow-y-auto">
+          <div className="max-w-7xl mx-auto w-full space-y-6">
+            {/* Global Feedback notification */}
+            {feedback && (
+              <div
+                className={`p-4 rounded-xl text-xs font-semibold flex items-center gap-2.5 mb-6 animate-in slide-in-from-top duration-200 ${
+                  feedback.type === 'success'
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                    : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                }`}
+              >
+                {feedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{feedback.text}</span>
+              </div>
+            )}
 
         {/* Active Tab View */}
         {activeTab === 'overview' && (
@@ -754,6 +776,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             onSaveEvent={handleSaveEvent}
             onDeleteEvent={handleDeleteEvent}
             onDuplicateEvent={handleDuplicateEvent}
+            onRefreshEvents={loadAllData}
           />
         )}
 
@@ -851,7 +874,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         {activeTab === 'admin-management' && isSuperAdmin && <AdminManagementTab />}
 
         {activeTab === 'sql' && <AdminSqlTab sqlSchema={sqlSchema} />}
-      </main>
+          </div>
+        </main>
+      </div>
 
       {/* Sign Out Confirmation Modal */}
       <SignOutConfirmModal

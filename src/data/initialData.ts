@@ -127,6 +127,9 @@ Participants will receive mentorship from top industry engineers, free food, ene
     current_participants: 142,
     status: 'Registration Open',
     featured: true,
+    participation_type: 'TEAM',
+    min_team_size: 2,
+    max_team_size: 4,
     highlights: [
       '₹50,000 Total Prize Pool',
       '24-Hour continuous high-speed internet & power backup',
@@ -156,6 +159,9 @@ Learn how to harness cutting-edge foundation models, build robust RAG pipelines 
     current_participants: 86,
     status: 'Registration Open',
     featured: true,
+    participation_type: 'SOLO',
+    min_team_size: 1,
+    max_team_size: 1,
     highlights: [
       'Live code walkthrough and Colab notebooks provided',
       'Hands-on building of RAG with Vector Search',
@@ -182,6 +188,9 @@ Learn how to harness cutting-edge foundation models, build robust RAG pipelines 
     current_participants: 34,
     status: 'Upcoming',
     featured: false,
+    participation_type: 'DUO',
+    min_team_size: 2,
+    max_team_size: 2,
     highlights: [
       'Hardware kits supplied for live experimentations',
       'Deploying YOLO models to Raspberry Pi & Jetson Nano',
@@ -206,6 +215,9 @@ Learn how to harness cutting-edge foundation models, build robust RAG pipelines 
     current_participants: 118,
     status: 'Completed',
     featured: false,
+    participation_type: 'SOLO',
+    min_team_size: 1,
+    max_team_size: 1,
     results: 'Top 3 winners felicitated with shields and certificates by the Head of Department.',
     winners: [
       { position: '1st Place', name: 'M. Sumanth (CSE AIML 3rd Year)', team_name: 'BitMasters' },

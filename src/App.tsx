@@ -201,6 +201,18 @@ export default function App() {
       }
     }
 
+    if (currentPath.startsWith('/admin')) {
+      return adminToken ? (
+        <AdminDashboardPage
+          onLogout={handleAdminLogout}
+          onNavigate={navigate}
+          onRefreshData={loadClubData}
+        />
+      ) : (
+        <AdminLoginPage onLoginSuccess={handleAdminLogin} onNavigate={navigate} />
+      );
+    }
+
     switch (currentPath) {
       case '/events':
         return (
@@ -274,24 +286,27 @@ export default function App() {
     }
   };
 
-  const isAdminRoute = currentPath === '/admin' && !!adminToken;
+  const isAdminRoute = currentPath.startsWith('/admin') && !!adminToken;
 
   return (
     <div className="min-h-screen bg-[#0A0B0E] text-[#E0E2E6] flex flex-col font-['Plus_Jakarta_Sans'] selection:bg-[#00E5FF] selection:text-[#0A0B0E]">
-      {/* Navigation Header */}
-      <Navbar
-        currentPath={currentPath}
-        onNavigate={navigate}
-        onOpenSearch={() => setIsSearchOpen(true)}
-        settings={settings}
-      />
+      {/* Navigation Header - Public Website Only */}
+      {!isAdminRoute && (
+        <Navbar
+          currentPath={currentPath}
+          onNavigate={navigate}
+          onOpenSearch={() => setIsSearchOpen(true)}
+          settings={settings}
+          isAdminLoggedIn={!!adminToken}
+        />
+      )}
 
       {/* Main Content Area */}
-      <main className="flex-1">
+      <main className={isAdminRoute ? "min-h-screen" : "flex-1"}>
         {renderContent()}
       </main>
 
-      {/* Footer */}
+      {/* Footer - Public Website Only */}
       {!isAdminRoute && (
         <Footer onNavigate={navigate} settings={settings} />
       )}
